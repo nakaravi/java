@@ -1,3 +1,12 @@
+/*
+We can create a program to sort array elements using bubble sort. Bubble sort is one of the simplest sorting algorithm.
+
+In there algorithm, array is traversed from first element to last element. 
+
+Here, current element is compared with the next element and so on. 
+
+If current element is greater than the next element, it is swapped using the "bubbleSort" function.
+*/
 import java.io.*;
 class BubbleSort{
 	static void bubbleSort(int[] arr){
