@@ -1,0 +1,4 @@
+https://developer.mozilla.org/en-US/docs/Web/API/Web_Speech_API
+https://github.com/mdn/web-speech-api/
+https://mdn.github.io/web-speech-api/speech-color-changer/
+https://github.com/syl22-00/pocketsphinx.js
