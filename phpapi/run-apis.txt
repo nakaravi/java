@@ -1,0 +1,11 @@
+
+http://localhost/api/product/read.php	// all records
+
+
+http://localhost/api/product/read_one.php?id=60	// read by id
+
+http://localhost/api/product/search.php?s=shirt	// read by search
+
+http://localhost/api/product/read_paging.php	//pagination
+
+http://localhost/api/category/read.php
