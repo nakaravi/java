@@ -1,0 +1,70 @@
+iPhone 6 and 6 Plus Media Queries
+**********************************
+iPhone 6
+*********
+Landscape
+*********
+@media only screen 
+    and (min-device-width : 375px) // or 213.4375em or 3in or 9cm
+    and (max-device-width : 667px) // or 41.6875em
+    and (width : 667px) // or 41.6875em
+    and (height : 375px) // or 23.4375em
+    and (orientation : landscape) 
+    and (color : 8)
+    and (device-aspect-ratio : 375/667)
+    and (aspect-ratio : 667/375)
+    and (device-pixel-ratio : 2)
+    and (-webkit-min-device-pixel-ratio : 2)
+{ }
+Portrait
+********
+@media only screen 
+    and (min-device-width : 375px) // or 213.4375em
+    and (max-device-width : 667px) // or 41.6875em
+    and (width : 375px) // or 23.4375em
+    and (height : 559px) // or 34.9375em
+    and (orientation : portrait) 
+    and (color : 8)
+    and (device-aspect-ratio : 375/667)
+    and (aspect-ratio : 375/559)
+    and (device-pixel-ratio : 2)
+    and (-webkit-min-device-pixel-ratio : 2)
+{ }
+iPhone 6+
+*********
+Landscape
+*********
+@media only screen 
+    and (min-device-width : 414px) 
+    and (max-device-width : 736px) 
+    and (orientation : landscape) 
+    and (-webkit-min-device-pixel-ratio : 3) 
+{ }
+Portrait
+********
+@media only screen 
+    and (min-device-width : 414px) 
+    and (max-device-width : 736px)
+    and (device-width : 414px)
+    and (device-height : 736px)
+    and (orientation : portrait) 
+    and (-webkit-min-device-pixel-ratio : 3) 
+    and (-webkit-device-pixel-ratio : 3)
+{ }
+Launch images
+**************
+
+1242 x 2208 (@3x) for portrait
+2208 x 1242 (@3x) for landscape
+App icon
+*********
+180 x 180
+
+iPhone 6 and 6+
+***************
+@media only screen 
+    and (max-device-width: 640px), 
+    only screen and (max-device-width: 667px), 
+    only screen and (max-width: 480px)
+{ }
+
