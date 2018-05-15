@@ -5,4 +5,9 @@ Templates
 ~~~~~~~~~~
 https://w3layouts.com/free-responsive-html5-css3-website-templates/
 https://w3layouts.com/enlightenment-educational-category-bootstrap-responsive-web-template/
+https://templated.co/
+https://www.codeinwp.com/blog/best-free-bootstrap-templates-for-reactjs/
+
+http://www.free-css.com/free-css-templates?start=48
+
 
