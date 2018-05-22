@@ -23,4 +23,10 @@ Buttons:
 http://freefrontend.com/css-buttons/
 
 
+JQuery Slider:
+**************
+http://creativecan.com/2013/04/jquery-slider/
+flipster
+
+
 
