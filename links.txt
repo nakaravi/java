@@ -27,6 +27,8 @@ JQuery Slider:
 **************
 http://creativecan.com/2013/04/jquery-slider/
 flipster
+https://www.sitepoint.com/10-jquery-flip-effect-plugins/
+
 
 
 
