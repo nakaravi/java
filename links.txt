@@ -32,3 +32,15 @@ https://www.sitepoint.com/10-jquery-flip-effect-plugins/
 
 
 
+Images:
+*********
+http://www.innasoft.in/assets-frontend/media/main-slider/1.jpg
+http://www.innasoft.in/assets-frontend/media/main-slider/2.jpg
+http://www.innasoft.in/assets-frontend/media/main-slider/3.jpg
+http://www.innasoft.in/assets-frontend/media/main-slider/4.jpg
+http://www.innasoft.in/assets-frontend/media/main-slider/5.jpg
+https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRyYVOojVulb5xWRjsc_dIQ0oB9q0pbzbuqQ2U03-i0XgVmLdD8MA
+http://rosixtechnology.com/assets/images/slider/customwebdesignbanner2.png
+http://uniqmindsolutions.com/images/18.jpg
+
+
