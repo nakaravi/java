@@ -1,0 +1,279 @@
+<style>
+
+body {
+    
+	overflow-x:hidden;
+}
+
+
+ /**------------ CSS Fixed Tab Styles Start -----------------**/
+  
+.dc-floater .dc-floater-content {
+overflow: hidden;
+}
+.fixedtab
+{
+	position:absolute;
+	float: left;
+	width: 1010px;
+	
+	-moz-transition: all 0.2s ease-in-out;
+	-webkit-transition: all 0.2s ease-in-out;
+	-o-transition: all 0.2s ease-in-out;
+	transition: all 0.2s ease-in-out;
+	z-index:99999999999;
+	
+}
+<!--Style made on 18jun15 end-->
+
+.tab1{
+	top: 110px;
+	}
+.righttab{
+	right: -915px; /*---Made changes on 18june15---*/
+	}
+.righttab:hover{
+	right: -130px; /*---Made changes on 18june15---*/
+	cursor: pointer;
+	}
+.fixedtab .tab{
+	float: left;
+	width: 105px; /*---Made changes on 18june15---*/
+	/*padding: 10px 10px;*/
+	margin: 120px 0 0 0;
+	z-index:999999999999;
+	}
+.fixedtab .tab span.notification{
+	position: absolute;
+	top: -1px;
+	padding: 3px 5px;
+	line-height: normal;
+	color: #FFF;
+	font-size: 11px;
+	background: #B02B2C;
+	text-transform: uppercase;
+	-webkit-border-radius: 4px;
+	-moz-border-radius: 4px;
+	border-radius: 4px;
+	}
+.righttab .tab span.notification{
+	left: -10px;
+	}
+.righttab .tab{
+	-webkit-border-top-left-radius: 6px;
+	-webkit-border-bottom-left-radius: 6px;
+	-moz-border-radius-topleft: 6px;
+	-moz-border-radius-bottomleft: 6px;
+	border-top-left-radius: 6px;
+	border-bottom-left-radius: 6px;
+	}
+.righttab .tab img{
+	max-width:none;
+	}
+
+.fixedtab .grey{
+	/*background: red;*/
+	}
+.fixedtab .tabcontent{
+	float: left;
+	width: 780px;
+	background: #FFF;
+	color: #555;
+	z-index:99999999;
+	}
+.righttab .tabcontent{
+	padding: 25px 10px 25px 10px;
+	-webkit-border-top-left-radius: 6px;
+	-webkit-border-bottom-left-radius: 6px;
+	-moz-border-radius-topleft: 6px;
+	-moz-border-radius-bottomleft: 6px;
+	border-top-left-radius: 6px;
+	border-bottom-left-radius: 6px;
+	}
+.righttab .tabcontent h3{
+	font-family:'Open Sans', san-serif;
+	font-size: 18px;
+	color: #444;
+	margin-bottom:10px;
+	margin:0;
+	text-decoration:none;
+	padding:0 0 10px 0;
+	}
+.righttab .tabcontent p{
+	font-family:sans-serif;
+	font-size: 13px;
+	color: #444;
+	margin-bottom:5px;
+	text-decoration:none;
+	line-height:18px;
+	padding:0;
+}
+.righttab .tabcontent .tabcontent-text{
+	width:100%;
+	float:left;
+	height:400px;
+	overflow-y:scroll;
+}
+.righttab .tabcontent .tabcontent-text li {
+	background: #ebeaef none repeat scroll 0 0;
+	display: block;
+	font-family:'Open Sans', san-serif;
+	font-size: 13px;
+	color: #444;
+	margin: 0 0 5px;
+	width:100%;
+	float:left;
+}
+.righttab .tabcontent .tabcontent-text li .list-icon {
+	float: left;
+	margin: 0 5px 0 3px !important;
+	width: 25px;
+}
+.righttab .tabcontent .tabcontent-text a {
+	/*background: #ebeaef none repeat scroll 0 0;*/
+	display: block;
+	font-family:'Open Sans', san-serif;
+	font-size: 13px;
+	color: #444;
+	margin:0;
+	padding:5px 0;
+}
+.righttab .tabcontent .tabcontent-text a img {
+	border: medium none !important;
+	width: auto !important;
+}
+@media screen and (min-device-width: 320px) and (max-device-width: 480px) { 
+	.tab1{
+		top: 60px;
+		}
+	}		
+		
+		
+/**------------ CSS Fixed Tab Styles Start -----------------**/
+
+.popup-container{
+	width:96%;
+	/*width: 700px;*/
+	margin: 0 auto;
+	}
+.popup-tablebox{
+	width: 100%;
+	/*width: 700px;*/
+	float: left;
+	}
+.popup-tablebox h2{
+	font-family: Arial, Helvetica, sans-serif;
+	font-size: 18px;
+	color: #FFF;
+	text-decoration: none;
+	}
+.popup-tablebox p{
+	font-family: Arial, Helvetica, sans-serif;
+	font-size: 14px;
+	color: #FFF;
+	text-decoration: none;
+	padding: 5px 0;
+	}
+.popup-tablebox p a{
+            color: #FFF;
+            text-decoration: underline;
+        }
+#newspaper-a{
+	font-family: Arial, Helvetica, sans-serif;
+	font-size: 12px;
+	width: 100%;
+	float: left;
+	text-align: left;
+	border-collapse: collapse;
+	border: 1px solid #003e6d;
+	margin-bottom: 10px;
+}
+#newspaper-a th{
+	background: none repeat scroll 0 0 #003e6d;
+	color: #fff;
+	font-size: 16px;
+	font-weight: bold;
+	margin: 5px;
+	padding: 12px 17px;
+}
+#newspaper-a td{
+	color: #000000;
+	 
+	font-weight: bold;
+	padding: 7px 17px;
+}
+#newspaper-a .odd{
+	background: #5cd6ff;
+}
+#newspaper-a .even{
+	background: #fff;
+}
+#newspaper-a tbody tr:hover td{
+	color: #000;
+	background: #fccf4a;
+}
+</style>
+
+<div id="dc-floater-45" class="dc-floater right active" style="width: 180px; position: absolute; z-index: 10000; top: 1510px; right: 10px;"><div class="tab"><span></span></div><div class="dc-floater-content">
+                    <div class="fixedtab righttab tab1">
+                        <div class="tab grey">
+                            <img src="low-price-guaranteed.png">
+                        </div>
+                        <div class="tabcontent">
+                            <h3 style="text-align: center; color: #005F8C;">Special Pricing for All Types Of Digital Signature Certificates.</h3>
+                            <div class="tabcontent-text">
+                                <div class="popup-container">
+                                    <div class="popup-tablebox">
+
+                                        <div style="color: White;">
+                                            <div style="clear: both; float: none;"></div>
+
+                                            <div style="clear:both;float:none;"></div><table id="newspaper-a"><thead><tr><th scope="col">Type</th><th scope="col" width="15%;">Duration</th><th scope="col" width="20%;">Price INR*</th><th>Renewal Price</th></tr></thead><tbody><tr class="odd"><td>Class 2 - Signing Only - Including Token</td><td>1 Year</td><td><img src="images/rupee_symbol.png" style="height: 15px;"> 1121</td><td><img src="images/rupee_symbol.png" style="height: 15px;"> 944</td></tr><tr class="even"><td>Class 2 - Signing Only - Including Token</td><td>2 Year</td><td><img src="images/rupee_symbol.png" style="height: 15px;"> 1263</td><td><img src="images/rupee_symbol.png" style="height: 15px;"> 1086</td></tr><tr class="odd"><td>Class 2 - Signing &amp; Encryption  - Including Token</td><td>1 Year</td><td><img src="images/rupee_symbol.png" style="height: 15px;"> 3233</td><td><img src="images/rupee_symbol.png" style="height: 15px;"> 3056</td></tr><tr class="even"><td>Class 2 - Signing &amp; Encryption  - Including Token</td><td>2 Year</td><td><img src="images/rupee_symbol.png" style=" height: 15px;"> 4272</td><td><img src="images/rupee_symbol.png" style="height: 15px;"> 4095</td></tr><tr class="odd"><td>Class 3 - Signing Only - Including Token</td><td>1 Year</td><td><img src="images/rupee_symbol.png" style="height: 15px;"> 3103</td><td><img src="images/rupee_symbol.png" style="height: 15px;"> 2926</td> </tr><tr class="even"><td>Class 3 - Signing Only - Including Token</td><td>2 Year</td><td><img src="images/rupee_symbol.png" style="height: 15px;"> 4661</td> <td><img src="images/rupee_symbol.png" style="height: 15px;"> 4484</td></tr><tr class="odd"><td>Class 3 - Signing &amp; Encryption - Including Token</td><td>1 Year</td><td><img src="images/rupee_symbol.png" style="height: 15px;"> 6750</td><td><img src="images/rupee_symbol.png" style="height: 15px;"> 6573</td> </tr><tr class="even"><td>Class 3 - Signing &amp; Encryption  - Including Token</td><td>2 Year</td><td><img src="images/rupee_symbol.png" style="height: 15px;"> 9617</td><td><img src="images/rupee_symbol.png" style="height: 15px;"> 9440</td> </tr><tr class="odd"><td colspan="3">Use this wizard to determine which digital signature certificate is applicable for your use. </td><td><img alt="Buy Now" src="images/addcart.png" style="cursor:pointer;" onclick="window.location.href='digital-signature-certificate.aspx?#wizard';"></td></tr></tbody></table>
+                                        </div>
+                                        <div style="padding: 5px;">
+                                            <table width="100%" border="0">
+                                                <tbody><tr>
+                                                    <td>
+                                                        <img src="images/bullet.gif">
+                                                    </td>
+                                                    <td>
+                                                        <p>All prices include certificate cost, Epass 2003 FIPS certified USB Crypto token, all taxes and courier delivery within India. We also deliver worldwide at an additional courier charge.</p>
+                                                    </td>
+                                                </tr>
+                                                <tr>
+                                                    <td>
+                                                        <img src="images/bullet.gif" style="margin-right: 10px;"></td>
+                                                    <td>
+                                                        <p>
+                                                            If you are not sure about which digital signature certificate to buy please use
+                our <span style="cursor: pointer; text-decoration: underline; font-weight: bold;" onclick="window.location.href='digital-signature-certificate';">selection wizard.</span>
+                                                        </p>
+                                                    </td>
+                                                </tr>
+                                                <tr>
+                                                    <td>
+                                                        <img src="images/bullet.gif">
+                                                    </td>
+                                                    <td>
+                                                        <p>We offer a 100% online purchase with online or offline payment &amp; courier delivery with free technical support to help you use your digital signature certificate.</p>
+                                                    </td>
+                                                </tr>
+                                                <tr>
+                                                    <td>
+                                                        <img src="images/bullet.gif"></td>
+                                                    <td>
+                                                        <p>Chat online with our sales representative or call +91-22-42978080 for any assistance on purchase or documentation. After office hours send queries to <a href="mailto:support@esign.in" target="_blank">support@esign.in</a></p>
+                                                    </td>
+                                                </tr>
+                                            </tbody></table>
+
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="clearfix"></div>
+                            </div>
+
+                        </div>
+                    </div>
+                </div></div>
+				
