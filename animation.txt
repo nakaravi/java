@@ -31,3 +31,7 @@ http://hdwallpapersrocks.com/wp-content/uploads/2013/10/Creative-green-nature-bo
 http://hdwallpapersrocks.com/nature/creative-green-nature-book-hd-wallpapers/
 kids-logo
 http://www.kokansafari.com/IMG/KokanSafari%20Logo.png
+
+
+sun rise-moon rise animation
+https://tympanus.net/codrops/2009/12/14/day-and-night-creating-animation-with-jquery-and-css/
