@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<title>JCanvas</title>
+		<script src="jquery-3.3.1.min.js"></script>
+		<script src="jcanvas.min.js"></script>
+	<head>
+	<body>
+		<div class="bird"></div>
+	</body>
+	<script>
+		
+	</script>
+	<style>
+		.bird{
+			width: 130px;
+			height: 130px;
+			background: url(sparrow.png);
+			position: absolute;
+			top: 0;
+			left: 0;
+			background-position: 0px 0px;
+			animation: imageChange1 .6s steps(4) infinite, birdmove 5.6s infinite;
+			-webkit-animation:imageChange1 .6s steps(4) infinite, birdmove 5.6s infinite;
+			-moz-animation:imageChange1 .6s steps(4) infinite, birdmove 5.6s infinite;
+			-o-animation:imageChange1 .6s steps(4) infinite, birdmove 5.6s infinite;
+		}
+		@keyframes imageChange1{
+			100%{background-position: -520px};
+		}
+		@-webkit-keyframes imageChange1
+		{
+			100%{background-position: -520px};
+		}
+		@-moz-keyframes imageChange1 {
+			100%{background-position: -520px};
+		}
+		@-o-keyframes imageChange1 {
+			100%{background-position: -520px};
+		}
+		@-webkit-keyframes birdmove
+		{
+			0%{left: 0px}5%{left:5%;top:10%}10%{left:10%;top:10%}15%{left:15%;top:10%}20%{left:20%;top:11%}
+			25%{left:25%;top:11%}30%{left:30%;top:13%}35%{left:35%;top:13%}	40%{left:40%;top:12%}45%{left:45%;top:12%}
+			50%{left:50%;top:9%}55%{left:55%;top:12%}60%{left:60%;top:11%}65%{left:65%;top:12%}	70%{left:70%;top:13%}
+			75%{left:75%;top:12%}80%{left:80%;top:15%}	85%{left:85%;top:12%}90%{left:90%;top:5%}95%{left:95%;top:12%}
+			100%{left:100%;}
+		}
+		@keyframes birdmove
+		{
+			0%{left: 0px}5%{left:5%;top:10%}10%{left:10%;top:10%}15%{left:15%;top:10%}20%{left:20%;top:11%}
+			25%{left:25%;top:11%}30%{left:30%;top:13%}35%{left:35%;top:13%}	40%{left:40%;top:12%}45%{left:45%;top:12%}
+			50%{left:50%;top:9%}55%{left:55%;top:12%}60%{left:60%;top:11%}65%{left:65%;top:12%}	70%{left:70%;top:13%}
+			75%{left:75%;top:12%}80%{left:80%;top:15%}	85%{left:85%;top:12%}90%{left:90%;top:5%}95%{left:95%;top:12%}
+			100%{left:100%;}
+		}
+		@-moz-keyframes birdmove
+		{
+			0%{left: 0px}5%{left:5%;top:10%}10%{left:10%;top:10%}15%{left:15%;top:10%}20%{left:20%;top:11%}
+			25%{left:25%;top:11%}30%{left:30%;top:13%}35%{left:35%;top:13%}	40%{left:40%;top:12%}45%{left:45%;top:12%}
+			50%{left:50%;top:9%}55%{left:55%;top:12%}60%{left:60%;top:11%}65%{left:65%;top:12%}	70%{left:70%;top:13%}
+			75%{left:75%;top:12%}80%{left:80%;top:15%}	85%{left:85%;top:12%}90%{left:90%;top:5%}95%{left:95%;top:12%}
+			100%{left:100%;}
+		}
+		@-o-keyframes birdmove
+		{
+			0%{left: 0px}5%{left:5%;top:10%}10%{left:10%;top:10%}15%{left:15%;top:10%}20%{left:20%;top:11%}
+			25%{left:25%;top:11%}30%{left:30%;top:13%}35%{left:35%;top:13%}	40%{left:40%;top:12%}45%{left:45%;top:12%}
+			50%{left:50%;top:9%}55%{left:55%;top:12%}60%{left:60%;top:11%}65%{left:65%;top:12%}	70%{left:70%;top:13%}
+			75%{left:75%;top:12%}80%{left:80%;top:15%}	85%{left:85%;top:12%}90%{left:90%;top:5%}95%{left:95%;top:12%}
+			100%{left:100%;}
+		} 
+	</style>
+</html>
