@@ -55,3 +55,13 @@ http://web-template.org/wp-content/uploads/2016/04/sunny-kids-footer-large.jpg
 
 sun rise-moon rise animation
 https://tympanus.net/codrops/2009/12/14/day-and-night-creating-animation-with-jquery-and-css/
+
+blooming-plant
+**************
+https://www.codeseek.co/?s=react
+https://codepen.io/asistapl/pen/pydvNj
+https://codepen.io/asistapl/pen/eZezxN
+https://codepen.io/asistapl/
+http://preview.codecanyon.net/item/rainbow-spinner-loader-svg-animation/full_screen_preview/19165412?_ga=2.204929744.1134361528.1529997911-71435905.1529997911
+
+
