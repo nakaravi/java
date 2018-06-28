@@ -1,3 +1,4 @@
+//npm install --save isomorphic-fetch es6-promise
 import fetch from 'isomorphic-fetch';
 const httpRequest = {
 	post: (url, data) => {
