@@ -1,0 +1,36 @@
+<div id="cont"></div>
+<div class="snake"></div>
+<style>
+#cont {
+    width: 150px;
+    height: 150px;
+    background: #000;
+    margin: 10px;
+}
+.snake {
+    width: 5px;
+    height: 5px;        
+    background: #f00;
+    position: absolute;
+    top: 5px;
+    left: 15px;
+    animation: around 5s infinite;
+    -webkit-animation: around 5s infinite;
+}
+@keyframes around
+{
+    0% { left: 15px; top: 5px; }
+    25% { left: 165px; top: 5px;  }
+    50% { top:  160px; left: 165px; }
+    75% { left: 15px; top: 160px; }
+    100% { top: 5px; left: 15px; }
+}
+@-webkit-keyframes around
+{
+    0% { left: 15px; top: 5px; }
+    25% { left: 165px; top: 5px;  }
+    50% { top:  160px; left: 165px; }
+    75% { left: 15px; top: 160px; }
+    100% { top: 5px; left: 15px; }
+}
+</style>
