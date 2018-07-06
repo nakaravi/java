@@ -1,3 +1,12 @@
+cloud animation
+***************
+https://webat.net/cloud-background-animation-using-css-svg/
+
+https://www.clicktorelease.com/code/css3dclouds/
+https://www.clicktorelease.com/blog/how-to-make-clouds-with-css-3d/
+
+
+
 christmas tree animation
 ************************
 https://codepen.io/dodozhang21/pen/imIvg
