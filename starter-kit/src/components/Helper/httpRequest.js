@@ -17,6 +17,16 @@ const httpRequest = {
             }
         );
 		return data;
+	},
+	getHtml:(url) =>{
+	
+		return fetch(url).then(function(res) {
+			return res.text();
+		}).then(function(html) {
+			//console.log(`html = ${html}`);
+			return html;
+		});
+
 	}
 }
 
