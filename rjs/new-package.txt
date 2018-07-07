@@ -1,5 +1,7 @@
 https://redux-minimal.js.org/       - working build
 
+https://github.com/Points/react-jspm-boilerplate
+
 https://www.javascriptstuff.com/react-starter-projects/
 
 https://github.com/davezuko/react-redux-starter-kit
