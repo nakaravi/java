@@ -1,5 +1,7 @@
 https://redux-minimal.js.org/       - working build
 
+https://www.javascriptstuff.com/react-starter-projects/
+
 https://github.com/davezuko/react-redux-starter-kit
 
 https://github.com/coryhouse/react-slingshot
