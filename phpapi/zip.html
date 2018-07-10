@@ -1,0 +1,2310 @@
+<?php
+
+namespace App\Controllers\Dashboard;
+use App\Controllers\Controller;
+use \Respect\Validation\Validator as Respect;
+use \App\Lib\Log\LoggingLib as Logger;
+use \App\Lib\Time\TimeLib as myTime;
+use \ZipArchiv;
+use \PHPExcel;
+
+class DashboardController extends Controller{
+	public function tabsCount($request,$response,$args){
+
+		$appuser = $request->getAttribute('appuser');
+		parent::__set('token',$appuser['token']);
+		parent::__set('user_key',$appuser['user_key']);
+		parent::__set('user_id',$appuser['id']);
+ 	
+		$this->errorList=[];
+		$extraSQL='';$orderSQL='';$sql='';
+
+		$sql = "SELECT id FROM site_content  WHERE active = 1" ;
+		$totrecords = $this->db2->prepare($sql);
+		$totrecords->execute();
+		$totassessment = $totrecords->rowCount();
+
+		$sql = "SELECT id FROM site_quiz_question  WHERE active = 1" ;
+		$totrecords = $this->db2->prepare($sql);
+		$totrecords->execute();
+		$totquestion = $totrecords->rowCount();
+
+		$sql = "SELECT id FROM site_quiz_question_category  WHERE active = 1 AND category_type='module'" ;
+		$totrecords = $this->db2->prepare($sql);
+		$totrecords->execute();
+		$totcategory = $totrecords->rowCount();
+
+		$output=['status'=>0,'result'=>'success', 'data'=> array('assessmentcount'=>$totassessment,'questioncount'=>$totquestion,'categorycount'=>$totcategory)];
+		return $this->sendOutputJSON($output);
+	}
+	public function dashboardContents($request,$response,$args){
+
+	}
+	public function assessmentpublish($request,$response,$args){
+		$appuser = $request->getAttribute('appuser');
+		parent::__set('token',$appuser['token']);
+		parent::__set('user_key',$appuser['user_key']);
+		parent::__set('user_id',$appuser['id']);
+		
+		$this->db2->beginTransaction();	
+		
+		$asskeyValid = Respect::notEmpty()->validate($args['key']);
+
+		if(!$asskeyValid){
+			$this->errorList[] = 'assessment key not found';
+		}
+		
+		$content_key = $args['key'];		
+		$sql = "SELECT * FROM site_content WHERE content_key = '{$content_key}' AND active=1";
+		$assessment = $this->db2->selectOne($sql);
+		
+		if(!$assessment){
+			$this->errorList[] = 'no records found';
+		}
+		
+		$sql = "SELECT max(export_version) as export_version FROM site_content_publish WHERE content_key = '{$content_key}'";
+		$veriondata = $this->db2->selectOne($sql);
+		if($veriondata){
+			$vsersion =  ( (int)$veriondata['export_version'] + 1 );
+		}
+		else {
+			$vsersion = 1;
+		}
+		
+		$qscore_keyValidate = Respect::stringType()->notEmpty()->validate($request->getParsedBody()['qscore']);	
+		
+		if(!$qscore_keyValidate){ 
+			$qscore =  '80';
+		}
+		else {
+			$qscore = $this->db2->escape($request->getParsedBody()['qscore']);
+		}
+
+		//echo $appuser['user_key'];		
+		//print_r($assessment['params']);
+		//processing the assessmment//
+		
+		$publish['content_key'] = $assessment['content_key'] ;
+		$publish['path'] = 'zip';
+		$publish['export_type'] = 'SCORM';
+		$publish['qualification_score'] = $qscore;
+		$publish['export_version'] = $vsersion;
+		$publish['export_date'] = date('Y-m-d H:i:s', time());
+		$publish['export_by'] 	= $this->user_id ;
+		$publish_id = $this->db2->insert('site_content_publish', $publish);
+		$sql = "SELECT * FROM site_content_publish WHERE id = {$publish_id}";
+		$publish = $this->db2->selectOne($sql);		
+		//decoding the params
+		$params = json_decode( $assessment['params'] , true);
+
+		//folder creation
+		$temp_path = $this->container['settings']['sConfig']['logpath'].'/'.$publish_id;
+		$tempsrc_path = $this->container['settings']['sConfig']['logpath'].'/'.$publish_id.'/source';
+		$tempzip_path = $this->container['settings']['sConfig']['logpath'].'/'.$publish_id.'/zip';
+		$src_path = $this->container['settings']['sConfig']['assessment_data_path'];
+		$img_path = $this->container['settings']['sConfig']['data_path'].'/'.$assessment['content_key'];
+		if(!$this->eden->set($tempsrc_path)->isFolder()) {
+			$this->eden->set($tempsrc_path)->create();			
+		}
+		$this->eden->set($tempsrc_path)->removeFiles();
+		$this->eden->set($tempsrc_path)->removeFolders();
+		
+		if (!is_dir($tempsrc_path)) {
+			 rmdir($tempsrc_path);
+		}
+
+
+		//folder creation based on the language
+		try{
+			self::copy($src_path,$tempsrc_path);
+			$this->eden->set($tempsrc_path.'/course/assets/images')->create();
+			self::copy($img_path,$tempsrc_path.'/course/assets/images');
+		}
+		catch (Exception $e)
+		{
+			$this->errorList[] = $e->getMessage();
+		}
+
+		$result = self::doProcessSCORM($tempsrc_path, $tempzip_path, $assessment, $publish);
+
+		if(!$result){
+			$this->db2->cancelTransaction();
+			$output = ['status'=>1,'result'=>'failed','data'=> []];
+			return $response->withJson($output);
+			
+		}
+				
+		$this->db2->endTransaction();
+		//create link for zip//		 
+		$dwnldzippath = $this->container['settings']['sConfig']['data_path'].'/'.$publish_id;
+		$zippath = $tempzip_path.'/'.$assessment['content_key'].'.zip';
+		
+		//move the zip file//
+		if(!$this->eden->set($dwnldzippath)->isFolder()) {
+			$this->eden->set($dwnldzippath)->create();
+		}
+		
+		$dwnldzippath = $this->container['settings']['sConfig']['data_path'].'/'.$publish_id.'/'.$assessment['content_key'].'.zip';
+		
+		self::copy($zippath, $dwnldzippath);
+		$dwnldzippath = $this->container['settings']['sConfig']['base_url'].'_data'.'/'.$publish_id.'/'.$assessment['content_key'].'.zip';
+		
+		self::deleteDir($temp_path);
+		//echo $temp_path; exit;
+
+		@unlink($zippath);
+		
+		$output = ['status'=>0,'result'=>'success','data'=> array('ziplink'=>$dwnldzippath)];
+		return $response->withJson($output);
+			
+	}	
+	public function assessmentCreate1($request,$response,$args){
+		
+		$appuser = $request->getAttribute('appuser');
+		parent::__set('token',$appuser['token']);
+		parent::__set('user_key',$appuser['user_key']);
+		parent::__set('user_id',$appuser['id']);
+ 		
+		$this->errorList=[];
+		$result = false;
+		//user and token verification
+		$tokenValidate = Respect::stringType()->notEmpty()->validate($request->getParsedBody()['token']);		
+		if(!$tokenValidate){ $this->errorList[]='token is not available'; }		
+		
+		$user_keyValidate = Respect::stringType()->notEmpty()->validate($request->getParsedBody()['user_key']);	
+		if(!$user_keyValidate){ $this->errorList[]='user is not available'; }		
+		
+		$nameValidate = Respect::stringType()->notEmpty()->validate($request->getParsedBody()['assessment_name']);		
+		if(!$nameValidate){ $this->errorList[]='name field is empty'; }
+		
+		$infoValidate = Respect::stringType()->notEmpty()->validate($request->getParsedBody()['assessment_info']);		
+		if(!$infoValidate){ $this->errorList[]='info is empty'; }
+
+		
+		if(!empty($this->errorList)){
+			$output=['status'=>2,'result'=>'validation failed','data'=>$this->errorList];
+			return $this->sendOutputJSON($output);
+		}
+		
+		//$assessment_name = $this->db2->escape($request->getParsedBody()['assessment_name']);
+		$assessment_name = str_replace("'","'", $request->getParsedBody()['assessment_name']);
+		//$assessment_info = $this->db2->escape($request->getParsedBody()['assessment_info']);
+ 		$assessment_info =  str_replace("'","'",$request->getParsedBody()['assessment_info']);
+
+				
+		$data['content_key'] = $this->getGUID();
+		$data['name'] = $assessment_name;
+		$data['type'] = 'assessment';
+		$data['version'] = 1;
+		$data['step'] = 1;
+		$data['tag'] = '';
+		$data['duration'] = "00:00:00";
+		$data['master_module_id'] = 0;
+		$data['description'] = "";
+		$data['params'] = $assessment_info;
+		$data['active'] = 1;
+		$data['visible'] = 1;
+		$data['completion']= 1;
+		$data['createdon'] = date('Y-m-d H:i:s', time());
+		$data['createdby'] 	= $this->user_id ;
+		$data['timemodified'] = 0;
+		
+		$this->db2->beginTransaction();		
+		$content_id = $this->db2->insert('site_content', $data);
+		//After this i will segreagte the json file//
+
+		/*
+		$assessmentinfo['content_key'] 										= $data['content_key'];
+		$assessmentinfo['name'] 												= $formdata['assessment_name'];
+		$assessmentinfo['version'] 											= 1;
+		$assessmentinfo['description'] 										= "";
+		$assessmentinfo['createdon'] 										= date('Y-m-d H:i:s', time());
+		$assessmentinfo['createdby'] 										= 1;
+		$assessmentinfo['timemodified'] 										= 0;
+		$assessmentinfo['shufflequestions'] 									= $formdata['random_questions'];
+		$assessmentinfo['shuffleanswers'] 									= $formdata['randomize_answer'];
+		$assessmentinfo['attempts'] 											= $formdata['no_of_attempts'];
+		$assessmentinfo['delete'] 											= 0;
+		$assessmentinfo['params']['language'] 								= $formdata['language'];
+		$assessmentinfo['params']['total_questions'] 						= $formdata['total_questions'];
+		$assessmentinfo['params']['no_of_questions_to_be_displayed'] 		= $formdata['no_of_questions_to_be_displayed'];
+		$assessmentinfo['params']['category_based'] 							= $formdata['category_based'];
+		$assessmentinfo['params']['max_no_of_questions_in_each_category'] 	= $formdata['max_no_of_questions_in_each_category'];
+		$assessmentinfo['params']['retry_assessment'] 						= $formdata['retry_assessment'];
+
+
+		$assessmentinfo['params'] = json_encode($assessmentinfo['params']);
+		
+		$content_quiz_id = $this->db2->insert('site_content_quiz', $assessmentinfo);*/
+		
+		$this->db2->endTransaction();
+		
+
+		if($content_id)
+		{
+			$data = $this->db2->selectOne('SELECT * FROM site_content WHERE id = ' . $content_id);
+			//$data['versions'][] = $this->db2->selectOne('SELECT * FROM site_content_quiz WHERE id = ' . $site_content_quiz_id);
+			$output = ['status'=>0,'result'=>'success','data'=> [$data]];
+			return $response->withJson($output);
+		}
+		else
+		{
+			$this->db2->cancelTransaction();
+			$output = ['status'=>1,'result'=>'failed','data'=> []];
+			return $response->withJson($output);
+		}
+	}
+	public function assessmentCreate2($request,$response,$args){
+		
+		$appuser = $request->getAttribute('appuser');
+		parent::__set('token',$appuser['token']);
+		parent::__set('user_key',$appuser['user_key']);
+		parent::__set('user_id',$appuser['id']);
+		
+		$this->db2->beginTransaction();	
+		
+		$asskeyValid = Respect::notEmpty()->validate($args['key']);
+
+		if(!$asskeyValid){
+			$this->errorList[] = 'assessment key not found';
+		}
+		
+		$content_key = $args['key'];
+
+		$content = $this->db2->selectOne("SELECT * FROM site_content WHERE active = 1 AND content_key = '{$content_key}'");
+		$content_id = $content['id'];
+		
+		if(!$content){
+			$this->errorList[] = 'no records found';
+		}
+			
+		$data['step'] = 2;
+		$data['timemodified'] = time();
+				
+		$update_next = $this->db2->update('site_content', $data,['id' => $content_id]);		
+
+		if( !$update_next || $this->errorList ){
+			$this->errorList[] = 'Not able to save.';
+			$this->db2->cancelTransaction();
+			$output = [ 'status'=>1,'result'=>'failed','data'=> $this->errorList ];
+			return $response->withJson($output);
+		}
+		
+		
+		
+		$data = $this->db2->selectOne('SELECT * FROM site_content WHERE id = ' . $content_id);
+		$output = ['status'=>0,'result'=>'success','data'=> $data];
+		$this->db2->endTransaction();	
+		
+		$output = ['status'=>0,'result'=>'success','data'=> $data];
+		return $response->withJson($output);
+		
+	}
+	public function assessmentCreate3($request,$response,$args){
+		
+		$appuser = $request->getAttribute('appuser');
+		parent::__set('token',$appuser['token']);
+		parent::__set('user_key',$appuser['user_key']);
+		parent::__set('user_id',$appuser['id']);
+		
+		$this->db2->beginTransaction();	
+		
+		$asskeyValid = Respect::notEmpty()->validate($args['key']);
+
+		if(!$asskeyValid){
+			$this->errorList[] = 'assessment key not found';
+		}
+		
+		$infoValidate = Respect::stringType()->notEmpty()->validate($request->getParsedBody()['assessment_info']);		
+		if(!$infoValidate){ $this->errorList[]='Settings are empty'; }
+		
+	
+		
+		$content_key = $args['key'];		
+		$sql = "SELECT * FROM site_content WHERE content_key = '{$content_key}' AND active=1";
+		$assessment = $this->db2->selectOne($sql);
+		
+		if(!$assessment){
+			$this->errorList[] = 'No records found';
+		}
+		
+		if(!empty($this->errorList)){
+			$output=['status'=>2,'result'=>'validation failed','data'=>$this->errorList];
+			return $this->sendOutputJSON($output);
+		}			
+		
+		//$assessment_info = $this->db2->escape($request->getParsedBody()['assessment_info']);
+		$assessment_info =  str_replace("'","'",$request->getParsedBody()['assessment_info']);
+
+
+			
+		$data['step'] = 3;
+		$data['params'] = $assessment_info;
+		$data['timemodified'] = time();		
+		$this->db2->update('site_content', $data,['id' => $assessment['id']]);
+
+		$data = $this->db2->selectOne('SELECT * FROM site_content WHERE id = ' . $assessment['id']);
+		$data['assessmentstatus'] = self::assessmentPublishstatus($data);
+		//print_r($data['assessmentstatus']);exit;
+		$output = ['status'=>0,'result'=>'success','data'=> $data];
+
+		$this->db2->endTransaction();
+		
+		return $response->withJson($output);
+	}	
+	public function assessmentEdit1($request,$response,$args){
+		$appuser = $request->getAttribute('appuser');
+		parent::__set('token',$appuser['token']);
+		parent::__set('user_key',$appuser['user_key']);
+		parent::__set('user_id',$appuser['id']);
+ 		
+		$this->errorList=[];
+		$result = false;
+		//user and token verification
+		
+		$keyValidate = Respect::stringType()->notEmpty()->validate($request->getAttribute('key'));		
+		if(!$keyValidate){ $this->errorList[]='key is empty'; }
+		
+		$tokenValidate = Respect::stringType()->notEmpty()->validate($request->getParsedBody()['token']);		
+		if(!$tokenValidate){ $this->errorList[]='token is not available'; }		
+		
+		$user_keyValidate = Respect::stringType()->notEmpty()->validate($request->getParsedBody()['user_key']);	
+		if(!$user_keyValidate){ $this->errorList[]='user is not available'; }		
+		
+		$nameValidate = Respect::stringType()->notEmpty()->validate($request->getParsedBody()['assessment_name']);		
+		if(!$nameValidate){ $this->errorList[]='name field is empty'; }
+		
+		$infoValidate = Respect::stringType()->notEmpty()->validate($request->getParsedBody()['assessment_info']);		
+		if(!$infoValidate){ $this->errorList[]='info is empty'; }
+
+		
+		if(!empty($this->errorList)){
+			$output=['status'=>2,'result'=>'validation failed','data'=>$this->errorList];
+			return $this->sendOutputJSON($output);
+		}
+		$content_key = $request->getAttribute('key');
+		$assessment_name = str_replace("'","'",$request->getParsedBody()['assessment_name']);
+		//$assessment_info = $this->db2->escape($request->getParsedBody()['assessment_info']);
+		//$assessment_info = str_replace("'","'",$this->db2->escape($request->getParsedBody()['assessment_info']));
+		$assessment_info =  str_replace("'","'",$request->getParsedBody()['assessment_info']);
+ 
+		$user_key = $this->db2->escape($request->getParsedBody()['user_key']);
+		$user = $this->db2->selectOne("SELECT * FROM konnect_users WHERE active = 1 AND user_key = '{$user_key}'");
+		$content = $this->db2->selectOne("SELECT * FROM site_content WHERE active = 1 AND content_key = '{$content_key}'");
+		
+		$content_id = $content['id'];
+		if(!$user)
+		{
+			$output=['status'=>1,'result'=>'failed','data'=> ['Invalid user.']];
+			return $response->withJson($output);
+		}	
+		if(!$user)
+		{
+			$output=['status'=>1,'result'=>'failed','data'=> ['Invalid content.']];
+			return $response->withJson($output);
+		}	
+		
+		$data['name'] = $assessment_name;
+		$data['version'] = 1;
+		$data['params'] = $assessment_info;
+		$data['timemodified'] = time();
+		
+		$this->db2->beginTransaction();		
+		$this->db2->update('site_content', $data,['id' => $content_id]);
+		
+		$this->db2->endTransaction();
+
+		$result = $this->db2->selectOne('SELECT * FROM site_content WHERE id = ' . $content_id);
+		//$data['versions'][] = $this->db2->selectOne('SELECT * FROM site_content_quiz WHERE id = ' . $site_content_quiz_id);
+		$output = ['status'=>0,'result'=>'success','data'=> [$result]];
+		return $response->withJson($output);
+
+	}
+	public function assessmentView($request,$response,$args){
+ 		$appuser = $request->getAttribute('appuser');
+		parent::__set('token',$appuser['token']);
+		parent::__set('user_key',$appuser['user_key']);
+		parent::__set('user_id',$appuser['id']);
+		
+		$content_key = $request->getAttribute('key');
+		$data = $this->db2->selectOne("SELECT * FROM site_content WHERE content_key = '{$content_key}'");
+		$data['versions'] = $this->db2->selectAll("SELECT * FROM site_content_quiz WHERE `delete` = 0 AND content_key = '{$content_key}'");	
+		$data['assessmentstatus'] = self::assessmentPublishstatus($data);
+		
+		$output = ['status'=>0,'result'=>'success','data'=> [$data]];
+		return $response->withJson($output);
+		
+ 
+	}
+	public function assessmentpublishcheck($request,$response,$args){
+		$appuser = $request->getAttribute('appuser');
+		parent::__set('token',$appuser['token']);
+		parent::__set('user_key',$appuser['user_key']);
+		parent::__set('user_id',$appuser['id']);
+		//parent::__set('user_id',1);
+		
+		$this->db2->beginTransaction();	
+		
+		$asskeyValid = Respect::notEmpty()->validate($args['key']);
+
+		if(!$asskeyValid){
+			$this->errorList[] = 'assessment key not found';
+		}
+		
+		$content_key = $this->db2->escape(trim($args['key']));		
+		$sql = "SELECT * FROM site_content WHERE content_key = '{$content_key}' AND active=1";
+		$assessment = $this->db2->selectOne($sql);
+		
+		if($assessment){		 
+			$rslt = self::assessmentPublishstatus($assessment);
+ 			$this->db2->endTransaction();
+			$output=['status'=>0,'result'=>'success', 'data'=> $rslt ];
+			return $this->sendOutputJSON($output);
+		} else {
+			$this->db2->cancelTransaction();
+			$output=['status'=>1,'result'=>'success','data'=>[]];
+			return $this->sendOutputJSON($output);
+		}
+
+	}
+	public function assessmentList($request,$response,$args){
+		$appuser = $request->getAttribute('appuser');
+		parent::__set('token',$appuser['token']);
+		parent::__set('user_key',$appuser['user_key']);
+		parent::__set('user_id',$appuser['id']);
+ 
+		//print_r($args['page']);
+		$this->errorList=[];
+		$extraSQL='';$orderSQL='';$sql='';
+		$cpage = 0; $cid=0;$searchkey='searchkey';
+		$pageComponentValid = Respect::notEmpty()->validate($args['page']);
+
+		if($pageComponentValid){
+			$pageComponent = explode("-", $args['page']);
+			$cpage = (int)$pageComponent[1];
+			$cid = (int)$pageComponent[2];
+		}
+		$searchkeyValid = Respect::notEmpty()->validate($args['searchkey']);
+		
+		if($searchkeyValid){
+			$searchkey = $args['searchkey'];
+		}
+		
+		if($searchkeyValid && $searchkey != 'searchkey'){
+			$searchWords = $this->extractKeyWords($args['searchkey']);
+			//print_r($searchWords); exit;
+			foreach($searchWords as $sw){
+				$sw = trim($sw);
+				if(!empty($sw)){
+					$searchArray[] = " c.name LIKE '%".$sw."%'";
+				}
+			}
+			if($searchWords) {
+				$extraSQL .= " AND " . implode(' OR ', $searchArray) ." ";
+			}
+			
+			else {
+				$this->errorList[] = 'no records found';
+				$output=['status'=>0,'result'=>'success','data'=>$this->errorList];
+				return $this->sendOutputJSON($output);			
+			}
+		
+		}
+
+		$sortOrder = "DESC";
+		$sortBy = 'c.id';
+		$sortValid = Respect::notEmpty()->validate($request->getParsedBody()['sort']);
+		
+        if($sortValid){
+			$sortValue = $request->getParsedBody()['sort'];
+			if($sortValue == 'asc'){
+				$sortOrder = "ASC";
+			}
+			else {
+				$sortOrder = "DESC";
+			}
+		}
+		
+		$sortbyValid = Respect::notEmpty()->validate($request->getParsedBody()['sortby']);
+        if($sortbyValid){
+			$sortbyValue = $request->getParsedBody()['sortby'];
+			$sortBy = 'c.'.$sortbyValue;
+			
+		}
+		
+		$orderBy =  "ORDER BY $sortBy $sortOrder";
+		
+		
+		$byfilterValid = Respect::notEmpty()->validate($request->getParsedBody()['byfilter']);
+		
+		if($byfilterValid){
+			$byfilter = $request->getParsedBody()['byfilter'];
+			if($byfilter == 'me' ){
+				$extraSQL .= " AND c.createdby=" . $this->user_id;
+			}
+			
+			
+		}
+
+
+
+		//$langs = 'en,fr';
+		$languageValid = Respect::notEmpty()->validate($request->getParsedBody()['language']);		
+		if($languageValid){
+			$langs = $request->getParsedBody()['language'];
+			$langquery = self::findassessemntbylang($langs);
+			if($langquery != '' ){
+				
+				$extraSQL .= " AND c.content_key IN ( ". $langquery ." )";
+			}						
+		}		
+		
+		
+ 
+		if($pageComponentValid)
+		{
+			$page = $cpage ;
+			$offset = $this->db2->limit * $page ;
+			$limit .= " Limit  $offset , " . $this->db2->limit;
+		}		
+		$sql = "SELECT * FROM konnect_users WHERE active = 1 AND id=" . $this->user_id ;
+		$user=$this->db2->selectOne($sql);
+		
+		if($user['user_type'] == 'DIRUSER'){
+			$extraSQL .= " AND c.createdby=" . $this->user_id;			
+		}
+		
+		$sql = "SELECT c.*,u.name as createdby FROM site_content c LEFT Join konnect_users u ON u.id=c.createdby WHERE c.active = 1 $extraSQL $orderBy" ;
+		$totrecords = $this->db2->prepare($sql);
+		$totrecords->execute();
+		$totrecords = $totrecords->rowCount();
+		
+		$sql = "SELECT c.*,u.name as createdby FROM site_content c LEFT Join konnect_users u ON u.id=c.createdby WHERE c.active = 1 $extraSQL $orderBy $limit" ;
+
+		$resultSet=$this->db2->selectAll($sql);
+		
+		foreach( $resultSet as  $result){
+			$params = json_decode( $result['params'] , true);
+			$result['params'] = array( 'language'=>$params['language'],'minimum_questions_in_each_objective'=>$params['minimum_questions_in_each_objective'],'language_to_publish'=>$params['language_to_publish'],'no_of_attempts'=>$params['no_of_attempts'],'no_of_questions_in_each_module'=>$params['no_of_questions_in_each_module'],'set_mastery_score'=>$params['set_mastery_score'],'category_based'=>$params['category_based']);
+			
+			$result['id'] = (int) $result['id'];
+			
+			$result['createdtime'] = strtotime($result['createdon']);
+			//$result['timesince'] =   myTime::timeAgo($result['createdon']);
+			$result['timesince'] =   myTime::ddmmyyyhhmmss($result['createdon']);
+			
+			$result['candelete'] = 'true';
+			$result['canedit'] = 'true';
+			$result['canduplicate'] = 'true';
+			
+			$result['associatequestions'] = self::associatequestions($result['content_key']) ;
+			$result['associatecategory'] = self::associatecategory($result['content_key']) ;
+			$result['assessmentstatus'] =  self::assessmentPublishstatus($result);
+ 
+ 			$records[] = $result;
+		}
+
+		//print_r($resultSet);die;
+		if(count($records) >0 )
+		{
+			$output=['status'=>0,'result'=>'success', 'data'=> array('recordlimit'=>(int)$this->db2->limit,'currentpage'=>$cpage,'totalpages'=>CEIL($totrecords/$this->db2->limit),'recordscount'=>$totrecords,'records'=>$records)];
+			return $this->sendOutputJSON($output);
+
+		}
+		else
+		{
+			$this->errorList[] = 'No records found.';
+			$output=['status'=>0,'result'=>'success','data'=>$this->errorList];
+			return $this->sendOutputJSON($output);
+		}
+
+		return;	
+		
+	}
+	public function exportAssessment($request,$response,$args){
+		$appuser = $request->getAttribute('appuser');
+		parent::__set('token',$appuser['token']);
+		parent::__set('user_key',$appuser['user_key']);
+		$this->db2->beginTransaction();
+		$objPHPExcel = new PHPExcel();
+ 
+ 		$this->errorList=[];
+		$result = false;
+	
+		$contentKeyValidate = Respect::stringType()->notEmpty()->validate($args['key']);		
+		if(!$contentKeyValidate){ $this->errorList[]='content_key is not available'; }		
+
+		if(!empty($this->errorList)){
+			$output=['status'=>2,'result'=>'validation failed','data'=>$this->errorList];
+			return $this->sendOutputJSON($output);
+		}
+		 
+		$userKey = $this->user_key;
+		$contentKey = $args['key'];
+		
+		$resultContent = $this->db2->selectOne("SELECT * FROM site_content WHERE active = 1 AND content_key = '$contentKey'");
+		
+
+		if(!$resultContent){
+			$this->errorList = "No records found.";
+			$output=['status'=>1,'result'=>'failed','data'=>$this->errorList];
+			return $this->sendOutputJSON($output);
+		}
+		
+		$query = "SELECT content.id
+					, content.content_key
+					, content.name
+					, content.params
+					, content.duration
+					, ques.id as question_id
+					, ques.question_key
+					, ques.parent_qid
+					, ques.qtype
+					, ques.questionname
+					, ques.questiontext
+					, ques.questionimage
+					, ques.defaultmark
+					, ques.penalty
+					, ques.qcategory
+					, ques.lang 
+				FROM site_content content
+				INNER JOIN site_quiz_question ques 
+					on content.content_key = ques.content_key AND content.content_key = '$contentKey' AND ques.active=1 AND ques.lang='en'";
+		
+		$result = $this->db2->selectAll($query);
+		
+		$objPHPExcel->setActiveSheetIndex(0);
+		$objPHPExcel->getActiveSheet()->getColumnDimension('A')->setWidth(10);
+		$objPHPExcel->getActiveSheet()->getColumnDimension('B')->setWidth(50);
+		$objPHPExcel->getActiveSheet()->getColumnDimension('C')->setWidth(35);
+		$objPHPExcel->getActiveSheet()->getColumnDimension('D')->setWidth(50);
+		$objPHPExcel->getActiveSheet()->getColumnDimension('E')->setWidth(35);
+		$objPHPExcel->getActiveSheet()->getColumnDimension('F')->setWidth(35);
+		$objPHPExcel->getActiveSheet()->getColumnDimension('G')->setWidth(35);
+		$objPHPExcel->getActiveSheet()->getColumnDimension('H')->setWidth(35);
+		$objPHPExcel->getActiveSheet()->getColumnDimension('I')->setWidth(35);
+		$objPHPExcel->getActiveSheet()->getColumnDimension('j')->setWidth(35);
+		$objPHPExcel->getActiveSheet()->getColumnDimension('K')->setWidth(35);
+		$objPHPExcel->getActiveSheet()->getColumnDimension('L')->setWidth(35);
+		$objPHPExcel->getActiveSheet()->getColumnDimension('M')->setWidth(35);
+		$objPHPExcel->getActiveSheet()->getColumnDimension('N')->setWidth(35);
+		$objPHPExcel->getActiveSheet()->getColumnDimension('O')->setWidth(35);
+		$objPHPExcel->getActiveSheet()->getColumnDimension('P')->setWidth(35);
+		$objPHPExcel->getActiveSheet()->getColumnDimension('Q')->setWidth(35);
+		$objPHPExcel->getActiveSheet()->getColumnDimension('R')->setWidth(35);
+		$objPHPExcel->getActiveSheet()->getColumnDimension('S')->setWidth(35);
+		$objPHPExcel->getActiveSheet()->getColumnDimension('T')->setWidth(35);
+		$objPHPExcel->getActiveSheet()->getColumnDimension('U')->setWidth(35);
+		$objPHPExcel->getActiveSheet()->getColumnDimension('V')->setWidth(35);
+		$objPHPExcel->getActiveSheet()->getColumnDimension('W')->setWidth(35);
+		$objPHPExcel->getActiveSheet()->getColumnDimension('X')->setWidth(35);
+		$objPHPExcel->getActiveSheet()->getColumnDimension('Y')->setWidth(35);
+
+	
+		$objPHPExcel->getActiveSheet()->SetCellValue('A1', 'Question_Id');
+		$objPHPExcel->getActiveSheet()->SetCellValue('B1', 'Assessment_Key');
+		//$objPHPExcel->getActiveSheet()->SetCellValue('C1', 'name');
+		//$objPHPExcel->getActiveSheet()->SetCellValue('D1', 'params');
+		//$objPHPExcel->getActiveSheet()->SetCellValue('E1', 'duration');
+		$objPHPExcel->getActiveSheet()->SetCellValue('C1', 'Question_Key');
+		//$objPHPExcel->getActiveSheet()->SetCellValue('G1', 'parent_qid');
+		$objPHPExcel->getActiveSheet()->SetCellValue('D1', 'Question_Type');
+		//$objPHPExcel->getActiveSheet()->SetCellValue('I1', 'questionname');
+		$objPHPExcel->getActiveSheet()->SetCellValue('E1', 'Question_Text');
+		$objPHPExcel->getActiveSheet()->SetCellValue('F1', 'Question_Image');
+		//$objPHPExcel->getActiveSheet()->SetCellValue('L1', 'defaultmark');
+		//$objPHPExcel->getActiveSheet()->SetCellValue('M1', 'penalty');
+		$objPHPExcel->getActiveSheet()->SetCellValue('G1', 'Question_Category');
+		$objPHPExcel->getActiveSheet()->SetCellValue('H1', 'Language');
+		$objPHPExcel->getActiveSheet()->SetCellValue('I1', 'OptionText_1');
+		$objPHPExcel->getActiveSheet()->SetCellValue('J1', 'OptionText_2');
+		$objPHPExcel->getActiveSheet()->SetCellValue('K1', 'OptionText_3');
+		$objPHPExcel->getActiveSheet()->SetCellValue('L1', 'OptionText_4');
+		$objPHPExcel->getActiveSheet()->SetCellValue('M1', 'OptionImage_1');
+		$objPHPExcel->getActiveSheet()->SetCellValue('N1', 'OptionImage_2');
+		$objPHPExcel->getActiveSheet()->SetCellValue('O1', 'OptionImage_3');
+		$objPHPExcel->getActiveSheet()->SetCellValue('P1', 'OptionImage_4');
+		$objPHPExcel->getActiveSheet()->SetCellValue('Q1', 'Answer');
+		/*$objPHPExcel->getActiveSheet()->SetCellValue('Y1', 'fraction2');
+		$objPHPExcel->getActiveSheet()->SetCellValue('Z1', 'fraction3');
+		$objPHPExcel->getActiveSheet()->SetCellValue('AA1', 'fraction4');*/
+
+		$rowCount=2;
+		foreach($result as $res){
+			$objPHPExcel->getActiveSheet()->SetCellValue('A'.$rowCount, $res['question_id']);
+			$objPHPExcel->getActiveSheet()->SetCellValue('B'.$rowCount, $res['content_key']);
+			//$objPHPExcel->getActiveSheet()->SetCellValue('C'.$rowCount, $res['name']);
+			//$objPHPExcel->getActiveSheet()->SetCellValue('D'.$rowCount, $res['params']);
+			//$objPHPExcel->getActiveSheet()->SetCellValue('E'.$rowCount, $res['duration']);
+			$objPHPExcel->getActiveSheet()->SetCellValue('C'.$rowCount, $res['question_key']);
+			//$objPHPExcel->getActiveSheet()->SetCellValue('G'.$rowCount, $res['parent_qid']);
+			$objPHPExcel->getActiveSheet()->SetCellValue('D'.$rowCount, $res['qtype']);
+			//$objPHPExcel->getActiveSheet()->SetCellValue('I'.$rowCount, $res['questionname']);
+			$objPHPExcel->getActiveSheet()->SetCellValue('E'.$rowCount, $res['questiontext']);
+			$objPHPExcel->getActiveSheet()->SetCellValue('F'.$rowCount, $res['questionimage']);
+			//$objPHPExcel->getActiveSheet()->SetCellValue('I'.$rowCount, $res['defaultmark']);
+			//$objPHPExcel->getActiveSheet()->SetCellValue('J'.$rowCount, $res['penalty']);
+			$objPHPExcel->getActiveSheet()->SetCellValue('G'.$rowCount, $res['qcategory']);
+			$objPHPExcel->getActiveSheet()->SetCellValue('H'.$rowCount, $res['lang']);
+			
+			$answers = $this->db2->selectAll("SELECT answer,answerimage,fraction FROM site_quiz_question_answers WHERE question = '".$res['question_id']."' ");
+			$answers1Row = ['I','J','K','L'];
+			$answers2Row = ['M','N','O','P'];
+			$answerArray = ['1','2','3','4'];
+			//$answers3Row = ['X','Y','Z','AA'];
+			//$answers4Row = ['P','T','X'];
+			
+			$count=0;
+			foreach($answers as $res){			
+				$objPHPExcel->getActiveSheet()->SetCellValue($answers1Row[$count].$rowCount, $res['answer']);
+				$objPHPExcel->getActiveSheet()->SetCellValue($answers2Row[$count].$rowCount, $res['answerimage']);
+				//$objPHPExcel->getActiveSheet()->SetCellValue($answers3Row[$count].$rowCount, $res['fraction']);
+				if($res['fraction'] != 0){
+					$correctAnswers[] = $answerArray[$count];
+				}
+				$count++;
+			}
+			$answ = "";
+			$answ = implode(',',$correctAnswers);
+			//$strAns = settype($answ, "string");
+			//$objPHPExcel->getActiveSheet()->SetCellValue('Q'.$rowCount, $answ);
+			$objPHPExcel->getActiveSheet()->setCellValueExplicit('Q'.$rowCount, $answ, \PHPExcel_Cell_DataType::TYPE_STRING);
+			unset($correctAnswers);
+			
+			
+			$rowCount++;
+		}
+		
+		//$objPHPExcel->getActiveSheet()->setTitle($resultContent['name']."_".$result[0]['lang']);
+		$objPHPExcel->getActiveSheet()->setTitle(self::languageList( $result[0]['lang'] ) );
+
+		$objWriter = \PHPExcel_IOFactory::createWriter($objPHPExcel, 'Excel2007');
+		$fileName = str_replace(" ","_",$result[0]['name'].time());
+		$objWriter->save("_data/$fileName.xlsx");
+		$this->db2->endTransaction();
+		
+		$link =  $this->container['settings']['sConfig']['base_url']."_data/$fileName.xlsx";
+		
+		$resultValue = array("file_link"=>$link);
+		$output=['status'=>0,'result'=>'success','data'=>$resultValue];
+		//$this->db2->cancelTransaction();
+		return $this->sendOutputJSON($output);		
+		
+	}
+	public function importAssessment($request,$response,$args){				
+		$appuser = $request->getAttribute('appuser');
+		parent::__set('token',$appuser['token']);
+		parent::__set('user_key',$appuser['user_key']);
+		$this->db2->beginTransaction();
+		$objPHPExcel = new PHPExcel();
+		
+ 		$this->errorList=[];
+		$result = false;
+ 
+		$langValidate = Respect::stringType()->notEmpty()->validate($request->getParsedBody()['lang']);		
+		if(!$langValidate){ $this->errorList[]='Language is not available.'; }		
+		
+		$contentKeyValid = Respect::notEmpty()->validate($args['key']);
+		if(!$langValidate){ $this->errorList[]='key is not available.'; }
+		
+		if(!isset($request->getUploadedFiles()['excel_file']) || $request->getUploadedFiles()['excel_file'] == '')
+		{
+			$this->errorList[] = 'Excel file is missing.';
+		}	
+		 
+		if(!empty($this->errorList)){
+			$output=['status'=>2,'result'=>'validation failed','data'=>$this->errorList];
+			return $this->sendOutputJSON($output);
+		}
+
+		
+		$userKey = $this->user_key;
+		$contentKey = $args['key'];
+		$lang = trim($this->db2->escape($request->getParsedBody()['lang']));
+			
+		$resultContent = $this->db2->selectOne("SELECT * FROM site_content WHERE active = 1 AND content_key = '$contentKey'");
+ 
+		if(!$resultContent){
+			$this->errorList = "invalid content";
+			$output=['status'=>1,'result'=>'failed','data'=>$this->errorList];
+			return $this->sendOutputJSON($output);
+		}
+		//delete the content//
+		$sql ="DELETE FROM site_quiz_question WHERE content_key = '$contentKey' AND lang='$lang' AND lang !='en'";
+		$deleteOldQns = $this->db2->prepare($sql);
+		$deleteOldQns->execute();		
+		
+		$excelFile = $request->getUploadedFiles()['excel_file'];
+
+		$objReader = \PHPExcel_IOFactory::createReader('Excel2007');
+		$objReader->setReadDataOnly(true);
+
+		$objPHPExcel = $objReader->load($_FILES['excel_file']['tmp_name']);
+		$objWorksheet = $objPHPExcel->getActiveSheet();
+		$objPHPExcel->setActiveSheetIndex(0)->calculateWorksheetDimension();
+		$highestRow = $objWorksheet->getHighestRow();
+		$highestColumn = $objWorksheet->getHighestColumn(); 
+		$highestColumnIndex = \PHPExcel_Cell::columnIndexFromString($highestColumn);
+		
+		for ($row = 2; $row <= $highestRow; $row++) {
+			//for ($col = 5; $col <= 13; $col++) {
+			for ($col = 3; $col <= $highestColumnIndex; $col++) {
+				$quesRows[$col] = $objWorksheet->getCellByColumnAndRow($col, $row)->getValue();
+			}
+
+			$question['content_key'] = $resultContent['content_key'];
+			$question['question_key'] = $this->getGUID();
+			$question['step'] = 2;
+			$question['qtype'] = $quesRows[3];
+			$question['questionname'] = 'na';
+			$question['questiontext'] = $quesRows[4];
+			$question['questionimage'] = $quesRows[5];
+			$question['createdby'] = $this->user_id;
+			$question['createdon'] = date('Y-m-y H:i:s', time());
+			$question['active'] = 1;
+			$question['qcategory'] = $quesRows[6];
+			$question['lang'] = $lang;
+
+			$insertId = $this->db2->insert('site_quiz_question',$question);
+			
+			$data['parent_qid'] = $insertId."_".$lang;
+			$where = ['id'=>$insertId];
+			$parentUpdate = $this->db2->update('site_quiz_question', $data, $where);			
+			///Answers insert			
+			$optionsRow = ['8','9','10','11'];
+			$imageRow = ['12','13','14','15'];
+	 
+			$opt1 = 0;$opt2 = 0;$opt3 = 0;$opt4 = 0;
+			$answerArray =  explode(",",$quesRows[16]);
+			foreach($answerArray as $ansr){
+				if($ansr == 1){
+					$opt1 = 1;
+				}
+				if($ansr == 2){
+					$opt2 = 1;
+				}
+				if($ansr == 3){
+					$opt3 = 1;
+				}
+				if($ansr == 4){
+					$opt4 = 1;
+				}
+			}
+			$arrayFraction = [$opt1,$opt2,$opt3,$opt4];
+			
+			for($count=0;$count <= 3;$count++){		
+				$answer['question'] = $insertId;
+				$answer['answer'] = $quesRows[$optionsRow[$count]];
+				$answer['answerimage'] = $quesRows[$imageRow[$count]];
+				$answer['option'] = "00".$count+1;
+				$answer['fraction'] = $arrayFraction[$count];
+				//$answer['fraction'] = $quesRows[$fractionRow[$count]];
+				if($answer['answer'] != "" || $answer['answer'] != null){
+					$insertAns = $this->db2->insert('site_quiz_question_answers',$answer);
+				}
+				
+			}
+			
+		}
+		$this->db2->endTransaction();
+		//$this->db2->cancelTransaction();
+
+		$this->errorList = "Imported succesfully.";
+		$output=['status'=>0,'result'=>'success','data'=>$this->errorList];
+		return $this->sendOutputJSON($output);	
+		
+	}
+	public function duplicateAssessment($request,$response,$args){
+		$appuser = $request->getAttribute('appuser');
+		parent::__set('token',$appuser['token']);
+		parent::__set('user_key',$appuser['user_key']);
+		parent::__set('user_id',$appuser['id']);
+		$this->db2->beginTransaction();
+		$cdnUrl = BASE_URL;
+ 		$this->errorList=[];
+		$result = false;
+	
+ 		$contentKeyValidate = Respect::stringType()->notEmpty()->validate($args['key']);		
+		if(!$contentKeyValidate){ $this->errorList[]='content_key is not available'; }			
+		
+		 
+		if(!empty($this->errorList)){
+			$output=['status'=>2,'result'=>'validation failed','data'=>$this->errorList];
+			return $this->sendOutputJSON($output);
+		}
+		
+		$userKey =  $this->user_key ;
+		$contentKey = $args['key'];
+		
+		$resultContent = $this->db2->selectOne("SELECT * FROM site_content WHERE active = 1 AND content_key = '$contentKey'");
+  
+		if(!$resultContent){
+			$this->db2->cancelTransaction();
+			$this->errorList = "invalid content";
+			$output=['status'=>1,'result'=>'failed','data'=>$this->errorList];
+			return $this->sendOutputJSON($output);
+		}
+ 
+		$content['content_key'] = $this->getGUID();
+		$content['name'] = "copy - ".$resultContent['name'];
+		$content['version'] = $resultContent['version'];
+		$content['tag'] = $resultContent['tag'];
+		$content['fsize'] = $resultContent['fsize'];
+		$content['type'] = $resultContent['type'];
+		$content['sub_type'] = $resultContent['sub_type'];
+		$content['master_module_id'] = $resultContent['master_module_id'];
+		$content['description'] = $resultContent['description'];
+		$content['params'] = $resultContent['params'];
+		$content['createdby'] = $this->user_id;
+		$content['createdon'] = date('Y-m-d H:i:s', time());
+		$content['visible'] = $resultContent['visible'];
+		$content['completion'] = 0;
+		$content['duration'] = $resultContent['duration'];
+		$content['active'] = $resultContent['active'];
+		$content['timemodified'] = 0;	
+		
+		$insertContent = $this->db2->insert('site_content',$content);
+		
+		if($insertContent <= 0){
+			$this->db2->cancelTransaction();
+			$this->errorList = "error inserting content";
+			$output=['status'=>1,'result'=>'failed','data'=>$this->errorList];
+			return $this->sendOutputJSON($output);
+		}
+		
+		/********************************************/
+		$ncontent = $this->db2->selectOne("SELECT * FROM site_content WHERE id = " . $insertContent);
+  
+		
+		
+		$resultCategory = $this->db2->selectAll("SELECT * FROM site_quiz_question_category WHERE assessment_key = '".$contentKey."' ORDER BY id ASC"); 
+			
+		foreach($resultCategory as $cat){
+			
+			$module_n =  $cat['module'];
+			if($cat['module'] > 0 ) {
+				$getoriname = $this->db2->selectOne("SELECT id,name FROM site_quiz_question_category WHERE id = " . $cat['module']);
+				$getccat = $this->db2->selectOne("SELECT id,name FROM site_quiz_question_category WHERE name = '" . $getoriname['name']."' AND assessment_key = '".$ncontent['content_key'] ."' " );
+				$module_n =  $getccat['id'];
+  			}
+			
+			$module['name'] = $cat['name'];
+			$module['category_type'] = $cat['category_type'];
+			$module['module'] = $module_n;		
+			$module['category_key'] = $this->getGUID();
+			$module['assessment_key'] = $ncontent['content_key'] ;
+			$module['description'] = $cat['description'];
+			$module['createdon'] = date('Y-m-d H:i:s', time());
+			$module['createdby'] = $this->user_id;
+			$module['active'] = 1;
+			$insertCat = $this->db2->insert('site_quiz_question_category',$module);
+			
+			$resultQuestions = $this->db2->selectAll("SELECT * FROM site_quiz_question  WHERE active = 1 AND content_key = '$contentKey' AND qcategory='".$cat['id']."'"); 
+
+			foreach($resultQuestions as $questions){
+				$copyQuestion['content_key'] = $ncontent['content_key'];
+				$copyQuestion['question_key'] = $this->getGUID();
+				$copyQuestion['step'] = $questions['step'];
+				$copyQuestion['parent_qid'] = $questions['parent_qid'];
+				$copyQuestion['qtype'] = $questions['qtype'];
+				$copyQuestion['questionname'] = $questions['questionname'];
+				$copyQuestion['questiontext'] = $questions['questiontext'];
+				$copyQuestion['questionimage'] = $questions['questionimage'];
+				$copyQuestion['defaultmark'] = $questions['defaultmark'];
+				$copyQuestion['penalty'] = $questions['penalty'];
+				$copyQuestion['timemodified'] = $questions['timemodified'];
+				$copyQuestion['createdby'] = $this->user_id;
+				$copyQuestion['createdon'] = date('Y-m-d H:i:s', time());
+				$copyQuestion['active'] = $questions['active'];
+				$copyQuestion['qcategory'] = $insertCat;
+				$copyQuestion['lang'] = $questions['lang'];
+				
+				$insertQuestion = $this->db2->insert('site_quiz_question',$copyQuestion);
+				
+				$resultAnswers = $this->db2->selectAll("SELECT * FROM site_quiz_question_answers WHERE question = '".$questions['id']."'"); 
+				
+				foreach($resultAnswers as $answers){
+					$copyAnswer['question'] = $insertQuestion;
+					$copyAnswer['answer'] = $answers['answer'];
+					$copyAnswer['answerimage'] = $answers['answerimage'];
+					$copyAnswer['option'] = $answers['option'];
+					$copyAnswer['fraction'] = $answers['fraction'];					
+					$this->db2->insert('site_quiz_question_answers',$copyAnswer);
+				}
+		
+			}
+			
+			
+		}
+		
+		/******************copy the folder**********************/
+		$src_path= $this->container->settings['sConfig']['data_path'].'/'.$contentKey;	
+		$tempsrc_path= $this->container->settings['sConfig']['data_path'].'/'.$ncontent['content_key'];	
+		if(!$this->eden->set($tempsrc_path)->isFolder()) {
+			$this->eden->set($tempsrc_path)->create();
+			self::copy($src_path,$tempsrc_path);
+		}
+		if(!$this->eden->set($src_path)->isFolder()) {
+			self::copy($src_path,$tempsrc_path);
+		}
+		
+ 
+		$this->db2->endTransaction();
+
+		$output=['status'=>0,'result'=>'success','data'=>"Assessment cloned successfully."];
+		return $this->sendOutputJSON($output);
+	
+	}
+	public function deleteAssessment($request,$response,$args){
+ 		$appuser = $request->getAttribute('appuser');
+		parent::__set('token',$appuser['token']);
+		parent::__set('user_key',$appuser['user_key']);
+		parent::__set('user_id',$appuser['id']);
+		
+		$content_key = $request->getAttribute('key');
+		$data = $this->db2->selectOne("SELECT * FROM site_content WHERE content_key = '{$content_key}'");
+		if($data){
+			$content['active'] = 0;
+			$this->db2->update('site_content', $content,['id' => $data['id']]);
+			$output = ['status'=>0,'result'=>'success','data'=> ["Deleted successfully."]];
+			return $response->withJson($output);
+		}
+		else{
+			$output = ['status'=>1,'result'=>'failed','data'=> ["Content does not exists."]];
+			return $response->withJson($output);
+		}
+		
+		
+ 
+	}	
+	public function moduleobjective($request,$response,$args){
+ 		$appuser = $request->getAttribute('appuser');
+		parent::__set('token',$appuser['token']);
+		parent::__set('user_key',$appuser['user_key']);
+		parent::__set('user_id',$appuser['id']);
+		
+		$content_key = $request->getAttribute('key');
+		$assessment = $this->db2->selectOne("SELECT * FROM site_content WHERE content_key = '{$content_key}' AND active = 1");
+		if(!$assessment){
+			$output = ['status'=>1,'result'=>'failed','data'=> ''];
+			return $response->withJson($output);
+		}
+	
+		$rslt = self::countmoduleobjective($assessment);
+		$output=['status'=>0,'result'=>'success', 'data'=> $rslt ];
+		return $this->sendOutputJSON($output);
+
+ 
+	}		
+	public function importNewAssessment($request,$response,$args){
+		//return "hi this assessment import";
+		
+		$appuser = $request->getAttribute('appuser');
+		parent::__set('token',$appuser['token']);
+		parent::__set('user_key',$appuser['user_key']);
+		parent::__set('user_id',$appuser['id']);
+		//parent::__set('user_id',1);
+		
+		$this->db2->beginTransaction();		
+		$objPHPExcel = new PHPExcel();
+		
+ 		$this->errorList=[];
+		$result = false;
+		$importStepValid = Respect::stringType()->notEmpty()->validate($request->getParsedBody()['step']);		
+		if(!$importStepValid){ $this->errorList[]='step field is empty'; }else{
+			$importStep=$this->db2->escape($request->getParsedBody()['step']);
+		}
+		
+		
+		if($importStep==1){
+			$assessment_key='';
+		}else if($importStep==2 || $importStep==3){			
+			$assessment_key_valid = Respect::stringType()->notEmpty()->validate($request->getParsedBody()['assessment_key']);		
+			if(!$assessment_key_valid){ $this->errorList[]='assessment_key field is empty'; }else{
+				$assessment_key=$this->db2->escape($request->getParsedBody()['assessment_key']);
+			}			
+		}
+		if(!isset($request->getUploadedFiles()['excel_file']) || $request->getUploadedFiles()['excel_file'] == '')
+		{
+			$this->errorList[] = 'Excel file is missing.';
+		}	
+		 
+		if(!empty($this->errorList)){
+			$output=['status'=>2,'result'=>'validation failed','data'=>$this->errorList];
+			return $this->sendOutputJSON($output);
+		}		
+		$userKey = $this->user_key;
+		$excelFile = $request->getUploadedFiles()['excel_file'];
+
+		$objReader = \PHPExcel_IOFactory::createReader('Excel2007');
+		$objReader->setReadDataOnly(true);
+
+		$objPHPExcel = $objReader->load($_FILES['excel_file']['tmp_name']);
+		
+		
+		if($importStep!=1){
+			$assessment_details = $this->db2->selectOne("SELECT * FROM site_content WHERE active = 1 AND content_key = '{$assessment_key}'");
+			if(!$assessment_details){
+				$output = [ 'status'=>1,'result'=>'failed','data'=> 'no assessment record found.' ];
+				return $response->withJson($output);
+			}
+		}
+		if($importStep==1){
+			$objWorksheet = $objPHPExcel->getSheetByName('Assessment Info');
+			$highestRow = $objWorksheet->getHighestRow();
+			$highestColumn = $objWorksheet->getHighestColumn(); 
+			$highestColumnIndex = \PHPExcel_Cell::columnIndexFromString($highestColumn);
+			
+			for ($row = 2; $row <= $highestRow; $row++) {
+				for ($col = 0; $col <= $highestColumnIndex; $col++) {
+					$quesRows[$col] = $objWorksheet->getCellByColumnAndRow($col, $row)->getValue();
+					
+					if($quesRows[$col]==null || $quesRows[$col]==''){
+						if(empty($quesRows[0])){				
+							$output = ['status'=>0,'result'=>'error','data'=> 'field is empty'];
+							return $response->withJson($output);					
+						}
+					}
+				}
+				$languageCodes=array();
+				$languageNames =  explode(",",$quesRows[1]);
+				foreach($languageNames as $languageCode){
+					$records='';
+					$query = "SELECT code,name from site_languages WHERE active=1 AND name='".$languageCode."'";
+					$records=$this->db2->selectAll($query);
+					if($records!=''){
+						array_push($languageCodes,$records[0]['code']);
+					}else{
+						$this->errorList[] = 'Specified language not find'.$languageCode;
+						$output=['status'=>1,'result'=>'failed','data'=>$this->errorList];
+						return $this->sendOutputJSON($output);						
+					}
+				}	
+				$excel_languages=$objPHPExcel->getSheetNames();
+				$excel_languages=array_diff($excel_languages,['Assessment Info','Publish Setting']);
+				$language_diff=array_diff($languageNames,$excel_languages);
+				
+				for($i=0;$i<$quesRows[3];$i++){
+					$feead_back[$i]=array();
+					if($i==0){
+						$feead_back[$i]['above_score']=$quesRows[8];
+						$feead_back[$i]['below_score']=$quesRows[9];
+					}
+					if($i==1){
+						$feead_back[$i]['above_score']=$quesRows[10];
+						$feead_back[$i]['below_score']=$quesRows[11];
+					}
+					if($i==2){
+						$feead_back[$i]['above_score']=$quesRows[12];
+						$feead_back[$i]['below_score']=$quesRows[13];
+					}					
+				}
+				
+/* 				if(empty($quesRows[0])){				
+					$output = ['status'=>0,'result'=>'error','data'=> 'Assessment name is empty'];
+					return $response->withJson($output);					
+				} */
+				
+				$data['content_key'] = $this->getGUID();
+				$data['name'] = $quesRows[0];
+				$assessment_info=array("language"=>$languageCodes,"minimum_questions_in_each_objective"=>$quesRows[2],"no_of_attempts"=>$quesRows[3],"detail_score"=>$quesRows[4]=='Yes'?true:false,"onlyScore"=>$quesRows[7]=='Yes'?true:false,"feedback"=>$feead_back,"no_of_right_answer"=>$quesRows[5]=='Yes'?true:false,"question_list"=>$quesRows[6]=='Yes'?true:false);
+				$data['type'] = 'assessment';
+				$data['version'] = 1;
+				$data['step'] = 1;
+				$data['tag'] = '';
+				$data['duration'] = "00:00:00";
+				$data['master_module_id'] = 0;
+				$data['description'] = "";
+				$data['params'] = json_encode($assessment_info);
+				$data['active'] = 1;
+				$data['visible'] = 1;
+				$data['completion']= 1;
+				$data['createdon'] = date('Y-m-d H:i:s', time());
+				$data['createdby'] 	= $this->user_id;
+				$data['timemodified'] = 0; 
+				
+				
+				$content_id = $this->db2->insert('site_content', $data);
+				
+				if($content_id){
+					$this->db2->endTransaction();
+					if(count($language_diff)!=0){
+						$data['error']='Assessment created without '.implode(", ",$language_diff).' language(s). Do you wish to proceed?';
+					}
+					$output = ['status'=>0,'result'=>'success','data'=> $data];
+					return $response->withJson($output);
+				}
+				else{
+					$this->db2->cancelTransaction();
+					$output = ['status'=>1,'result'=>'failed','data'=> []];
+					return $response->withJson($output);
+				}				
+			}
+		}
+		else if($importStep==2){
+			$excel_languages=$objPHPExcel->getSheetNames();
+			$excel_languages=array_diff($excel_languages,['Assessment Info','Publish Setting']);
+			foreach($excel_languages as $language){
+				$objWorksheet = $objPHPExcel->getSheetByName($language);
+				$highestRow = $objWorksheet->getHighestRow();
+				$highestColumn = $objWorksheet->getHighestColumn(); 
+				$highestColumnIndex = \PHPExcel_Cell::columnIndexFromString($highestColumn);
+				$headdingColumn='';
+				$module_id=0;
+				$objective_id=0;
+				$return=false;
+				for ($row = 1; $row <= $highestRow; $row++) {
+					for ($col = 0; $col <= $highestColumnIndex; $col++) {
+						$quesRows[$col] =(string) $objWorksheet->getCellByColumnAndRow($col, $row)->getValue();
+						
+/* 						if($quesRows[$col]!='Questions'){
+							if(empty($quesRows[0])){
+								if($quesRows[$col]==null || $quesRows[$col]==''){
+									$output = ['status'=>0,'result'=>'error','data'=> 'field is empty'];
+									return $response->withJson($output);					
+								}							
+							}
+						} */
+						
+						
+						if($quesRows[$col]=='Module'){
+							$row=$row+2;
+							$col=$col-1;				
+							$headdingColumn='Module';
+						}else if($quesRows[$col]=='Objective'){
+							$row=$row+2;
+							$col=$col-1;
+							$headdingColumn='Objective';
+						}else if($quesRows[$col]=='Questions'){
+							$row=$row+2;
+							$col=$col-1;				
+							$headdingColumn='Questions';
+						}
+					}
+					if($headdingColumn=='Module'){
+						$questionCat['name'] 			=  $quesRows[0];
+						$questionCat['description'] 	=  'na';
+						$questionCat['createdby'] 		= $this->user_id;
+						$questionCat['createdon'] 	= date('Y-m-d H:i:s');
+						$questionCat['active'] 		= 1;
+						$questionCat['category_key'] = $this->getGUID();
+						$questionCat['assessment_key'] = $assessment_key;
+						$questionCat['category_type'] = 'module';
+						$questionCat['module'] = 0;
+						$sql = "SELECT id FROM site_quiz_question_category WHERE name = '". $quesRows[0] ."' AND assessment_key = '". $assessment_key."'";
+						$resultExist=$this->db2->selectOne($sql);
+						if(!$resultExist){
+							$insert = $this->db2->insert('site_quiz_question_category',$questionCat);
+							if($insert){
+								$module_id=$insert;
+								$return=true;
+							}
+							else{
+								$this->errorList[] = 'Failed to create '. $displayCat .'.';
+								$output=['status'=>1,'result'=>'failed','data'=>$this->errorList];
+								return $this->sendOutputJSON($output);
+							}
+						}else{
+							if($language!='English')
+								$module_id=$resultExist['id'];
+						}
+					}else if($headdingColumn=='Objective'){
+						$questionCat['name'] 			=  $quesRows[0];
+						$questionCat['description'] 	=  'na';
+						$questionCat['createdby'] 		= $this->user_id;
+						$questionCat['createdon'] 	= date('Y-m-d H:i:s');
+						$questionCat['active'] 		= 1;
+						$questionCat['category_key'] = $this->getGUID();
+						$questionCat['assessment_key'] = $assessment_key;
+						$questionCat['category_type'] = 'objective';
+						$questionCat['module'] = $module_id;
+						$sql = "SELECT id FROM site_quiz_question_category WHERE name = '". $quesRows[0] ."' AND assessment_key = '". $assessment_key."'";
+						$resultExist=$this->db2->selectOne($sql);
+						if(!$resultExist){
+							$insert = $this->db2->insert('site_quiz_question_category',$questionCat);
+							if($insert){
+								$objective_id=$insert;
+								$return=true;
+							}
+							else{
+								$this->errorList[] = 'Failed to create '. $quesRows[0] .'.';
+								$output=['status'=>1,'result'=>'failed','data'=>$this->errorList];
+								return $this->sendOutputJSON($output);
+							}
+						}else{
+							if($language!='English')
+								$objective_id=$resultExist['id'];
+						}
+					}else if($headdingColumn=='Questions'){
+						//echo $headdingColumn."--".$quesRows[0];
+						$records='';
+						$query = "SELECT code,name from site_languages WHERE active=1 AND name='".$language."'";
+						$records=$this->db2->selectAll($query);
+						if($records!=''){
+							$questionStep1['lang']=$records[0]['code'];
+						}else{
+							$this->errorList[] = 'Specified language not find'.$language;
+							$output=['status'=>1,'result'=>'failed','data'=>$this->errorList];
+							return $this->sendOutputJSON($output);						
+						}					
+						// Start Question Part-1 
+						$questionStep1['qtype'] 			=  $quesRows[1];
+						$questionStep1['content_key'] 	=  $assessment_key;
+						$questionStep1['questionname'] 	=  'na';
+						$questionStep1['qcategory'] 	=  $objective_id;
+						$questionStep1['step'] 	=  1;
+						$questionStep1['active']		= 1;		
+						$questionStep1['createdby'] 		= $this->user_id;
+						$questionStep1['createdon'] 	= date('Y-m-d H:i:s');
+						$questionStep1['question_key'] = $this->getGUID();
+						
+						if(($quesRows[1]==null || $quesRows[1]=='') || ($quesRows[0]==null || $quesRows[0]=='')){
+							
+						}else{
+							$insert = $this->db2->insert('site_quiz_question',$questionStep1);
+						}
+						if($insert){
+							$questionStep1['parent_qid'] = 	$insert .'_'.$questionStep1['lang'];
+							$question_id=$insert;
+							$update = $this->db2->update('site_quiz_question', $questionStep1, ['id'=>$insert]);
+							$sql = "SELECT q.*,u.name as createdby,qc.name as categoryname FROM site_quiz_question q Join konnect_users u ON u.id=q.createdby  JOIN site_quiz_question_category qc ON qc.id=q.qcategory WHERE q.active=1 AND q.id = " . $insert ;
+							$records=$this->db2->selectAll($sql);
+							if(!$update){
+								$this->errorList[] = 'Failed to update.';
+								$output=['status'=>1,'result'=>'failed','data'=>$this->errorList];
+								return $this->sendOutputJSON($output);						
+							}else{
+								$return=true;
+							}
+						}else{
+							$this->errorList[] = 'Failed to create '. $quesRows[1] .'.';
+							$output=['status'=>1,'result'=>'failed','data'=>$this->errorList];
+							return $this->sendOutputJSON($output);					
+						}
+						// End Question Part-1
+						
+						// Start Question Part-2 
+						$questionStep2['qtype'] 			=  $questionStep1['qtype'];
+						$questionStep2['questionname'] 	=  $questionStep1['questionname'];
+						$questionStep2['lang'] 	=  $questionStep1['lang'];
+						$questionStep2['qcategory'] 	=  $objective_id;
+						$questionStep2['step'] 	=  2;
+						$questionStep2['questiontext'] 	=  $quesRows[0];
+						$questionStep2['questionimage'] 	=  '';
+						$questionStep2['defaultmark'] 	=  1;
+						$questionStep2['penalty'] 	=  0;
+						$questionStep2['params'] = '';
+						if($question_id!=0){
+							$update = $this->db2->update('site_quiz_question', $questionStep2, ['id'=> $question_id]);
+							if($update){
+								$answers='';
+								$answer1=0;
+								$answer2=0;
+								$answer3=0;
+								$answer4=0;
+								
+								$answers =  explode(",",$quesRows[6]);
+								//print_r($answers);
+								foreach($answers as $answer){
+									if($answer==1){$answer1=1;}
+									if($answer==2){$answer2=1;}
+									if($answer==3){$answer3=1;}
+									if($answer==4){$answer4=1;}
+								}					
+								if($questionStep2['qtype']=='TRF'){
+									$quesRows[2]='True';
+									$quesRows[3]='False';
+									$quesRows[4]='';
+									$quesRows[5]='';
+								}
+								if(!empty($quesRows[2])){
+									$option1['question'] = $question_id;
+									$option1['answer'] = $quesRows[2];
+									$option1['answerimage'] = 'no';
+									$option1['option'] = 1;
+									$option1['fraction'] = $answer1;
+									$option1['remediation'] = 1;
+									$option1['tryagain'] = 1;
+									$this->db2->delete('site_quiz_question_answers', array('question'=>$question_id,'option'=>$option1['option']));
+									$this->db2->insert('site_quiz_question_answers',$option1);
+								}
+								
+								if(!empty($quesRows[3])){
+									$option2['question'] = $question_id;
+									$option2['answer'] = $quesRows[3];
+									$option2['answerimage'] = 'no';
+									$option2['option'] = 2;
+									$option2['fraction'] = $answer2;
+									$option2['remediation'] = 1;
+									$option2['tryagain'] = 1;
+									$this->db2->delete('site_quiz_question_answers', array('question'=>$question_id,'option'=>$option2['option']));
+									$this->db2->insert('site_quiz_question_answers',$option2);
+								}
+								
+								if(!empty($quesRows[4])){
+									$option3['question'] = $question_id;
+									$option3['answer'] = $quesRows[4];
+									$option3['answerimage'] = 'no';
+									$option3['option'] = 3;
+									$option3['fraction'] = $answer3;
+									$option3['remediation'] = 1;
+									$option3['tryagain'] = 1;
+									$this->db2->delete('site_quiz_question_answers', array('question'=>$question_id,'option'=>$option3['option']));
+									$this->db2->insert('site_quiz_question_answers',$option3);
+								}
+
+								if(!empty($quesRows[5])){
+									$fraction =1;
+									$feedback = '';			
+									$option4['question'] = $question_id;
+									$option4['answer'] = $quesRows[5];
+									$option4['answerimage'] = 'no';			
+									$option4['option'] = 4;
+									$option4['fraction'] = $answer4;
+									$option4['remediation'] = 1;
+									$option4['tryagain'] = 1;
+									$this->db2->delete('site_quiz_question_answers', array('question'=>$question_id,'option'=>$option4['option']));
+									$this->db2->insert('site_quiz_question_answers',$option4);
+								}						
+							}else{
+								$this->errorList[] = 'Failed to create '. $quesRows[1] .'.';
+								$output=['status'=>1,'result'=>'failed','data'=>$this->errorList];
+								return $this->sendOutputJSON($output);						
+							}
+						}
+						else{
+							$this->errorList[] = 'Failed to create '. $quesRows[1] .'.';
+							$output=['status'=>1,'result'=>'failed','data'=>$this->errorList];
+							return $this->sendOutputJSON($output);					
+						}
+					}
+				}
+			}
+			if($return){
+				$this->db2->endTransaction();
+				$output = ['status'=>0,'result'=>'success','data'=> $assessment_details];
+				return $response->withJson($output);
+			}else{
+				$this->db2->cancelTransaction();
+				$output = ['status'=>1,'result'=>'failed','data'=> []];
+				return $response->withJson($output);				
+			}
+		}
+		else if($importStep==3){
+			$result=false;
+			$excel_languages=$objPHPExcel->getSheetNames();
+			$excel_languages=array_diff($excel_languages,['Assessment Info','Publish Setting']);
+			
+			$objWorksheet = $objPHPExcel->getSheetByName('Publish Setting');
+			$highestRow = $objWorksheet->getHighestRow();
+			$highestColumn = $objWorksheet->getHighestColumn(); 
+			$highestColumnIndex = \PHPExcel_Cell::columnIndexFromString($highestColumn);
+			
+			for ($row = 2; $row <= $highestRow; $row++) {
+				for ($col = 0; $col <= $highestColumnIndex; $col++) {
+					$quesRows[$col] =  $objWorksheet->getCellByColumnAndRow($col, $row)->getValue();
+/* 					if($quesRows[$col]==null || $quesRows[$col]==''){
+						if(empty($quesRows[0])){				
+							$output = ['status'=>0,'result'=>'error','data'=> 'field is empty'];
+							return $response->withJson($output);					
+						}
+					}	 */				
+				}
+				$publishSetting['step'] = 3;
+				
+				$assessment_info=json_decode($assessment_details['params'],true);
+/* 				print_r($assessment_details['params']);
+				return; */
+				$assessment_info['questions_in_assessment']=$quesRows[0];
+				$assessment_info['category_based']=$quesRows[1]=='Yes'?true:false;
+				$assessment_info['maximum_questions_to_be_displayed_from_each_module']=$quesRows[2];
+				$assessment_info['maximum_questions_in_each_objective']=$quesRows[3];
+				$assessment_info['totalQuestion']=$quesRows[4]=='Yes'?true:false;
+				
+				$assessment_info['set_mastery_score']=$quesRows[5];
+				$assessment_time=array();
+				$assessment_times=explode(":",$quesRows[7]);
+				foreach($assessment_times as $key=>$time){
+					if($key==0){
+						$assessment_time['hour']=$time;
+						if($time>23){
+							$error[0]='Hour: Please provide time value between 0 and 23';
+						}
+					}else if($key==1){
+						$assessment_time['minutes']=$time;
+						if($time>60){
+						$error[1]='Minutes: Please provide time value between 0 and 60';
+						}
+					}else if($key==2){
+						$assessment_time['second']=$time;
+						if($time>60){
+						$error[2]='Second : Please provide time value between 0 and 60';
+						}
+					}
+				}
+				if(!empty($error)){				
+					$output = ['status'=>0,'result'=>'error','data'=> $error];
+					return $response->withJson($output);					
+				}				
+				$languageCodes=array();
+				$languageNames =  explode(",",$quesRows[6]);
+				foreach($excel_languages as $languageCode){
+					$records='';
+					$query = "SELECT code,name from site_languages WHERE active=1 AND name='".$languageCode."'";
+					$records=$this->db2->selectAll($query);
+					if($records!=''){
+						array_push($languageCodes,$records[0]['code']);
+					}else{
+						$this->errorList[] = 'Specified language not find'.$languageCode;
+						$output=['status'=>1,'result'=>'failed','data'=>$this->errorList];
+						return $this->sendOutputJSON($output);						
+					}
+				}			
+				if(count($languageCodes)==count($languageNames)){
+					$assessment_info['all_languages']=true;
+				}else{
+					$assessment_info['all_languages']=false;
+				}
+				$assessment_info['language_to_publish']=$languageCodes;
+				$assessment_info['assessment_time_detail']=$assessment_time;
+				$assessment_info['assessment_time']=$quesRows[7];
+				
+				$publishSetting['params'] = json_encode($assessment_info);
+				
+				$publishSetting['timemodified'] = time();
+
+				$updateResult=$this->db2->update('site_content', $publishSetting,['id' => $assessment_details['id']]);
+				if($updateResult){
+					$output = ['status'=>0,'result'=>'success','data'=> $publishSetting];
+					$result = true;
+				}else{
+					$output=['status'=>2,'result'=>'validation failed','data'=>$quesRows];
+					return $this->sendOutputJSON($output);					
+				}				
+			}
+			if($result){
+				$this->db2->endTransaction();
+				$output = ['status'=>0,'result'=>'success','data'=> $assessment_details];
+				return $response->withJson($output);
+			}else{
+				$this->db2->cancelTransaction();
+				$output = ['status'=>1,'result'=>'failed','data'=> []];
+				return $response->withJson($output);				
+			}			
+		}
+	}	
+	/********************************************************/
+	function countmoduleobjective( $assessment ){		
+
+		$params = json_decode($assessment['params']);
+		//print_r($params->language);
+		$bq=[];
+		foreach($params->language as $lang){
+			$sql = "select m.* from  site_quiz_question_category m WHERE m.assessment_key='".$assessment['content_key']."' AND m.category_type='module' AND m.module=0";
+			$modules = $this->db2->selectAll($sql);			 
+			$key=0;
+			$mdl_array=[];
+			$bqi['lang'] = $lang;
+			
+			foreach( $modules as $mod ){
+				
+				$sql = "SELECT id,name FROM site_quiz_question_category WHERE module = ". $mod['id'];
+				$objs = $this->db2->selectAll($sql);
+				$mdr=array();
+				$modqns=0;
+				$objqns=0;
+				foreach( $objs as $obj ){
+					$sql = "SELECT id FROM site_quiz_question WHERE content_key = '".$assessment['content_key']."' AND qcategory = '".$obj['id']."' AND lang= '".$lang."'  AND active=1 ";
+					$qns = $this->db2->selectAll($sql);
+					
+					$objqns += count($qns);
+					$bqi['objectives'][$obj['name']]  = count($qns);
+				}
+				$modqns = ($modqns + $objqns);
+				$bqi['modules'][$mod['name']]  = $modqns;
+
+			}
+			
+ 			$bq[] = $bqi;
+		}
+		if(!empty($bq)){
+			return $bq;
+		}
+		return;
+	}
+	function findassessemntbylang( $langs ){		
+		
+		/*$b = explode(',',$langs);
+		$ar = array();
+		for($i=0; $i < count($b); $i++)
+		{
+		   array_push( $ar, $b[$i] );
+		}
+		if(!$ar){
+			return;
+		}
+ 		$flangs = "'" . implode( "','", $ar) . "'";
+		$sql = "SELECT content_key FROM site_quiz_question WHERE lang IN ( ". $flangs ." ) AND active =1 GROUP BY content_key";	
+		$keyss = $this->db2->selectAll($sql);
+		$ar = array();
+		foreach($keyss as $keys){
+			array_push( $ar, $keys['content_key'] );
+		}
+		
+		$flangs = "'" . implode( "','", $ar) . "'";
+
+		return  $flangs;
+		*/
+		$b = explode(',',$langs);
+		$ar = array();
+		for($i=0; $i < count($b); $i++)
+		{
+		   array_push( $ar, $b[$i] );
+		}
+		if(!$ar){
+			return;
+		}
+		
+ 		$flangs = "'" . implode( "','", $ar) . "'";
+		$sql = "SELECT content_key,params from site_content where active = 1";
+		$keyss = $this->db2->selectAll($sql);
+		$ar = array();
+		foreach($keyss as $keys){
+			$arrayParams = json_decode($keys['params']);
+			$langContent = $arrayParams->language;
+			if($langContent){
+				if(!array_diff($b, $langContent) && !array_diff($langContent, $b)){
+					array_push( $ar, $keys['content_key'] );
+				}
+			}
+		}
+		$flangs = "'" . implode( "','", $ar) . "'";
+
+		return  $flangs;		
+	}
+	function assessmentPublishstatus( $assessment ){
+
+		if(!$assessment){
+			return 'draft';
+		}
+		
+		$params = $assessment['params'];
+
+		//first check the assessment criteria for each objective//
+		
+		$minimum_questions_in_each_objective = $params['minimum_questions_in_each_objective'];
+		$lang_count = count($params['language']);
+		
+		//foreach($params->language as $lang){	
+			
+			$sql = "select ob.* from  site_quiz_question_category ob WHERE ob.assessment_key='".$assessment['content_key']."' AND ob.category_type='objective' AND ob.module > 0";
+			$objectives = $this->db2->selectAll($sql);
+			$sq = [];
+			if( count($objectives) > 0 ){
+				foreach ($objectives as $obj){
+					$sql = "SELECT id FROM site_quiz_question WHERE qcategory=".$obj['id']." AND  content_key = '".$assessment['content_key']."' AND lang='en' AND active =1";
+					$qnsc = count($this->db2->selectAll($sql));
+					if($qnsc < $minimum_questions_in_each_objective){
+						$sq[] = 'fail';
+					}
+					$sq[] = 'pass';
+
+				}
+			}
+			else {
+				$sq[] = 'fail';
+			}
+			
+		//}
+		//print_r($sq);
+		if (in_array("fail", $sq)){
+			return 'draft';
+		}
+		 
+			
+		if($assessment['step'] == 3){
+			
+			//echo 'ddd'; print_r($params->language_to_publish);exit;
+			if(count($params['language_to_publish']) == 0 ){
+				return 'draft';
+			}
+			
+			//$rslt = self::countmoduleobjective($assessment);
+			//print_r($rslt);
+			//questions_in_assessment
+			//maximum_questions_in_each_objective
+			//maximum_questions_to_be_displayed_from_each_module
+			
+			
+			
+			return 'success';
+		}
+		else {
+			return 'draft';
+		}
+		
+
+		/*$sql = "select m.* from  site_quiz_question_category m WHERE m.assessment_key='".$assessment['content_key']."' AND m.category_type='module' AND m.module=0";
+		$modules = $this->db2->selectAll($sql);			 
+		if(count($modules) < 2){
+			return 'draft';
+		}
+		
+		$sql = "select ob.* from  site_quiz_question_category ob WHERE ob.assessment_key='".$assessment['content_key']."' AND ob.category_type='objective' AND ob.module > 0";
+		$objectives = $this->db2->selectAll($sql);			 
+		if(count($objectives) < 2){
+			return 'draft';
+		}		
+		
+		$param = json_decode( $assessment , true);
+		$lang_count = count($param['language']);
+			
+		$sql = "SELECT id FROM site_quiz_question WHERE content_key = '".$assessment['content_key']."' AND lang='en' AND active =1";	
+		
+		$qnsc = count($this->db2->selectAll($sql));
+		$min_ques = (int)  $param['minimum_questions_in_each_objective'];
+		$Oquestions = ( (count($objectives) * $min_ques ) * $lang_count );
+		$Aquestions = ( $qnsc * $lang_count );
+ 
+		if($Oquestions >= $Aquestions){
+			return 'success';
+		}
+		else {
+			return 'draft';
+		}
+		return ;
+		*/
+	}
+	function associatequestions($content_key){
+		
+		$sql="select id from site_quiz_question_category where assessment_key = '{$content_key}' AND module > 0 ";
+		$results = $this->db2->selectAll($sql);
+		foreach($results as $res){
+			$qcat[] = $res['id'];
+		}
+		if(count($qcat) == 0 ){
+			return 0;
+		}
+		$string= implode(",",$qcat); 
+		$sql="select count(id) as cnt from site_quiz_question where qcategory IN($string) AND lang='en' AND active=1";		
+		//$sql="SELECT id FROM site_quiz_question WHERE content_key = '{$content_key}' AND active=1 AND lang='en'";
+		$result = $this->db2->selectOne($sql);
+  
+		$data = $result['cnt'];
+				
+		return $data;
+	}
+	function associatecategory($content_key){
+		$sql="SELECT distinct(id) FROM site_quiz_question_category WHERE assessment_key = '{$content_key}' AND active=1 AND module=0 AND category_type='module'";
+		$data = $this->db2->selectAll($sql);
+		return count($data);
+	}	
+	function copy($source, $target) {
+        if (!is_dir($source)) {
+			//it is a file, do a normal copy
+            copy($source, $target);
+            return;
+        }
+
+        //it is a folder, copy its files & sub-folders
+        @mkdir($target);
+        $d = dir($source);
+        $navFolders = array('.', '..');
+        while (false !== ($fileEntry=$d->read() )) {//copy one by one
+            //skip if it is navigation folder . or ..
+            if (in_array($fileEntry, $navFolders) ) {
+                continue;
+            }
+
+            //do copy
+            $s = "$source/$fileEntry";
+            $t = "$target/$fileEntry";
+            self::copy($s, $t);
+        }
+        $d->close();
+    }
+	function languageList($lang) {
+       $langList = [
+		'English'=>'en',
+		'French'=> 'fr',
+		'German'=> 'de',
+		'Portuguese'=> 'pt',
+		'Russian'=> 'ru'
+		];
+		return array_search ($lang, $langList);
+    }	
+	function doProcessSCORM($target, $tempzip_path, $assessment, $publish){
+		//$params = json_decode( $assessment['params'] , true);
+		$params = json_decode($assessment['params']);
+		$result = false;
+		$xmlmaniffext_file = $target.'/imsmanifest.xml';
+		$result = self::writeManifestxml($xmlmaniffext_file, $assessment, $publish);		
+		if(!$result){
+			return false;
+		}
+		$courseconfig_file = $target.'/course/config.xml';
+		$result = self::writeCourseConfigxml($courseconfig_file, $assessment, $publish);
+		if(!$result){
+			return false;
+		}
+		
+		foreach($params->language_to_publish as $lang) {
+			self::copy($target.'/course/content',$target.'/course/content_'. $lang);
+			$content_langfolder = $target.'/course/content_'. $lang.'/asmnt/data';
+			$result = self::writeAsmntdatajson( $content_langfolder, $assessment, $publish, $lang);
+			if(!$result){
+				return false;
+			}			
+		}
+		
+		@rmdir($target.'/course/content/');
+
+		//make the zip file//
+		$result = self::createZIP( $target, $tempzip_path, $assessment  );	
+		if(!$result){
+			return false;
+		}
+
+		return true;
+	
+	}
+	function writeManifestxml( $target, $assessment, $publish ){
+		$params = json_decode( $assessment['params'] , true);
+		//print_r( $params['no_of_questions_to_be_displayed'] );
+		$content = '<?xml version="1.0" ?>
+<manifest identifier="Salesforce_course_id" version="1.0" xmlns="http://www.imsproject.org/xsd/imscp_rootv1p1p2" xmlns:adlcp="http://www.adlnet.org/xsd/adlcp_rootv1p2" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.imsproject.org/xsd/imscp_rootv1p1p2 imscp_rootv1p1p2.xsd http://www.imsglobal.org/xsd/imsmd_rootv1p2p1 imsmd_rootv1p2p1.xsd http://www.adlnet.org/xsd/adlcp_rootv1p2 adlcp_rootv1p2.xsd">	
+	<metadata>
+		<schema>ADL SCORM</schema>
+		<schemaversion>1.2</schemaversion>
+	</metadata>
+	<organizations default="'.$assessment['content_key'].'">
+		<organization identifier="'.$assessment['content_key'].'">
+			<title>'.$assessment['content_key'].'</title> 
+			<item identifier="'.$assessment['name'].'" isvisible="true" identifierref="GETASSESSMENT_html5">
+				<title>'.$assessment['content_key'].'</title>
+				<adlcp:masteryscore>'.$publish['set_mastery_score'].'</adlcp:masteryscore>
+			</item>
+		</organization>
+	</organizations>
+	<resources>
+		<resource identifier="GETASSESSMENT_html5" type="webcontent" href="index.html" adlcp:scormtype="sco"></resource>
+	</resources>
+</manifest>
+';
+ 
+		$result = $this->edenfile->set($target)->setContent($content);
+		return $result;
+	}
+	function writeCourseConfigxml( $target, $assessment, $publish ){
+		$params = json_decode( $assessment['params'] , true);
+		$content = '<?xml version="1.0" encoding="utf-8" ?>
+<config>
+	<CourseName>'.$assessment['name'].'</CourseName>
+	<ModuleName>Assessment</ModuleName>
+	<CourseId>'.$assessment['id'].'</CourseId>
+	<courseIndicator available="no" />
+	<packagetype>assessment</packagetype>
+	<assessment id="'.$assessment['content_key'].'">
+		<numberofAttempts value="'.$params['no_of_attempts'].'"/>
+		<randomization value="'.($params['random_question'] == 1 ? 'yes' : 'no' ).'"/>
+		<randomizationanswer value="'.($params['randomize_answer'] == 1 ? 'yes' : 'no' ).'"/>
+		<numberofQuestion values="'.$params['questions_in_assessment'].'"/>
+		<assessmentTime values="'.$params['assessment_time'].'"/>		
+		<assessmentMasteryscore values="'.$params['set_mastery_score'].'"/>
+	</assessment>
+	<languages>
+							' . PHP_EOL;
+//echo '<pre>'; print_r($params['langImg']); echo '</pre>'; exit;					
+foreach($params['language'] as $lang) {
+	
+	
+$content .=                    '
+		<lang>
+			<lan>'.$lang.'</lan>
+			<coverImg>'.(empty($params['langImg'][$lang]) ? 'default' : $params['langImg'][$lang] ).'</coverImg>
+			<ModName></ModName>
+			<ModDesc></ModDesc>
+			<Duration></Duration>
+		</lang>
+'.PHP_EOL;
+								
+}
+
+$content .=               PHP_EOL . '
+	</languages>
+	<lms>
+		<integrationMethod>SCORM1.2</integrationMethod>
+	</lms>
+</config>
+';
+ 
+		$result = $this->edenfile->set($target)->setContent($content);
+		return $result;
+	}
+	function generateQAs( $assessment, $publish, $lang ){
+		/*$params = json_decode( $assessment['params'] , true);
+		$result = '';
+		
+		$sql = "SELECT q.qcategory FROM site_quiz_question q JOIN site_quiz_question_category qc ON qc.id=q.qcategory WHERE q.content_key = '".$assessment['content_key']."' AND q.lang= '".$lang."'  GROUP BY q.qcategory";	
+		$mmodules = $this->db2->selectAll($sql);	
+		foreach( $mmodules as $object ){
+			
+			$module[]= (int)$object['qcategory'];
+		}
+		if(!$mmodules){
+			return false;
+		}
+		$module = implode(',',$module);	
+		$sql = "select ob.module,m.name from  site_quiz_question_category ob JOIN site_quiz_question_category m ON m.id=ob.module where ob.id IN($module) GROUP BY ob.module ";
+		$modules = $this->db2->selectAll($sql);	
+		$mdr=array();
+		$key=0;
+		foreach( $modules as $mod ){
+			 $md['name'] = $mod['name'];
+			 $md['Objectives'] = self::generatesubQAs($assessment, $mod['module'] , $lang );
+			 //$mdr[] = array( $key => $md );
+			 $mdr[] = $md ;
+			 //$key++;
+		}
+		$export = json_encode( $mdr );
+		return $export;
+		*/
+		
+		$sql = "select m.* from  site_quiz_question_category m WHERE m.assessment_key='".$assessment['content_key']."' AND m.category_type='module' AND m.module=0";
+		$modules = $this->db2->selectAll($sql);			 
+		$key=0;
+		foreach( $modules as $mod ){
+			 $md['id'] = $mod['id'];
+			 $md['name'] = $mod['name'];
+			 $md['objectives'] = self::generatesubQAs($assessment, $mod['id'] , $lang );
+		 
+			 //$mdr[] = array( $key => $md );
+			 $mdr[] = $md ;
+			 //$key++;
+		}
+		
+		$param = json_decode( $assessment['params'] , true);
+		//echo '<pre>'; print_r( $param['questions_in_assessment']); echo '</pre>'; exit;
+		if (array_key_exists("randomize",$param)){ 
+			if( strtolower($param['randomize']) == 'no' ){
+				$dataS = $mdr;
+				$qcount = $param['questions_in_assessment'];
+				$buildarray = self::writeqaswithoutRandomize($dataS);
+				
+				$faarray = array_slice($buildarray,0,$qcount);
+	 
+				
+				$i=1;
+				$nbayy = array();
+				foreach($buildarray as $barray){
+					 
+					if($qcount < $i){
+						break;
+					}
+					$nbayy[] = $barray;
+					$i++;
+					
+				}
+
+				$mdr = array();
+				$mdr[0]['id']= 1;
+				$mdr[0]['name']= 'mod_name';	
+				
+				$obx = array();
+				$obx['objid'] = 2;
+				$obx['objName'] = 'obj_name';
+				$obx['questions'] =  $nbayy;
+				
+				$mdr[0]['objectives'] = array($obx);				
+				//echo '<pre>'; print_r( $mdr ); echo '</pre>'; exit;			 
+			}			
+		}
+ 
+		
+		$export = json_encode( $mdr );
+		//print_r( $export ); exit;
+		return $export;	
+	
+	}
+	function generatesubQAs($assessment, $module, $lang ){
+ 		//$sql = "SELECT q.*,qc.name FROM site_quiz_question q JOIN site_quiz_question_category qc ON qc.id=q.qcategory WHERE content_key = '".$assessment['content_key']."' AND q.lang= '".$lang."'  GROUP BY q.qcategory";
+		
+		$sql = "SELECT id,name FROM site_quiz_question_category WHERE module = ". $module ;
+		$objs = $this->db2->selectAll($sql);
+		$mdr=array();
+		$key=0;
+		foreach( $objs as $obj ){
+			 $ob['objid'] = $obj['id'];
+			 $ob['objName'] = $obj['name'];
+			 $ob['questions'] = self::generatesubsubQAs($assessment, $obj['id'] , $lang , $module);
+			 $mdr[] = $ob;
+			 //$key++;
+		}
+
+		return $mdr;
+		
+	}
+	function generatesubsubQAs($assessment, $qcategory, $lang , $module){
+ 		
+		$sql = "SELECT * FROM site_quiz_question WHERE content_key = '".$assessment['content_key']."' AND qcategory = '".$qcategory."' AND lang= '".$lang."'  AND active=1 ";
+		$qns = $this->db2->selectAll($sql);
+		$mdr= array();
+		$key=0;
+		foreach( $qns as $qn ){
+			 
+			$sql = "SELECT * FROM site_quiz_question_answers where question = ".$qn['id'];
+			$qrecords=$this->db2->selectAll($sql);
+			
+			$options = array();
+			$canswers = array();
+			$ansop =1;
+			$imgOption='';
+			foreach($qrecords as $option){
+				
+				$options[] = base64_encode($option['answer']);
+				if( $option['fraction'] > 0 ){
+					$canswers[] = $ansop;
+				}
+				 $ansop++;
+				 if( $option['answerimage'] == 'yes' ){
+					  $imgOption .= 'yes'; 
+				 }
+			}
+
+			$qs['qusid'] = $qn['id'];
+			$qs['qusCategory'] = ( !empty ($qn['questionimage'] ) ? 'image' : 'text');
+			$qs['qusType'] = $qn['qtype'];
+			$qs['qusImage'] = ( !empty ($qn['questionimage'] ) ? 'yes' : 'no');
+			$qs['optnImage'] = ( !empty ($imgOption) ? 'yes' : 'no');
+			$qs['question'] = base64_encode($qn['questiontext']);
+			$qs['questionimage'] = base64_encode($qn['questionimage']);
+			$qs['options'] = $options;
+			$qs['correctAnswer'] = implode(',',$canswers);
+			$qs['modid'] = $module;
+			$mdr[] = $qs;
+			//$key++;
+ 		}
+		return $mdr;
+	}	
+	function createZIP( $target, $tempzip_path, $assessment){
+ 		
+		$zip = $this->zip ;		
+		$zip_file = $tempzip_path.'/'.$assessment['content_key'].'.zip';
+		$files = glob($target . '*');
+
+		try{			
+			$zp = $this->zip->make($zip_file)->add($files)->close();
+		}
+		catch(Exception $e) {
+		  return ;
+		}		
+		sleep (1);
+		return true;
+		
+	}	
+	function writeAsmntdatajson( $target, $assessment, $publish, $lang ){
+		$params = json_decode( $assessment['params'] , true);
+		
+		//page_1 content
+		$target1 = $target.'/page_1.js';
+		$middlecontent ='';
+		$qcontent = '"Modules": '. self::generateQAs($assessment, $publish, $lang);
+		$content = '{
+
+	"ExternalData": [
+		{
+			"headingTxt":{
+				"text" :"'.$assessment['name'].'"
+			},
+			"introText_1":{
+				"text" :""
+			}
+
+		}
+	]
+}	
+			';
+		$result = $this->edenfile->set($target1)->setContent($content);					
+		//page_3 content
+		$target3 = $target.'/page_3.js';
+ 		
+		foreach($params['feedback'] as $feedback) {
+			$k++;
+			$middlecontent .= ', "feedbackAboveTxt_'.$k.'":{ "text" :"'.$feedback['above_score'].'" }, "feedbackBelowTxt_'.$k.'":{ "text" :"'.$feedback['below_score'].'" }';
+		}	
+		
+		$middlecontent .= ', "detail_score":{ "text" :"'.$params['detail_score'].'"}';
+		$middlecontent .= ', "onlyScore":{ "text" : "'.$params['onlyScore'].'"}';
+		$middlecontent .= ', "question_list_Both":{ "text" : "'.$params['question_list'].'"}';
+		$middlecontent .= ', "no_of_right_answer":{ "text" : "'.$params['no_of_right_answer'].'"}';
+		$middlecontent .= ', "mastery_score":{ "text" : "'.$params['set_mastery_score'].'"}';
+		
+		
+		$content = '{
+
+	"ExternalData": [
+		{
+			"resultTxt_1":{
+				"text" :""
+			},
+			"resultTxt_2":{
+				"text" :""
+			},
+			"scoreTxt":{
+				"text" :"You scored "
+			},
+			"solutionTxt":{
+				"text" :"Solution."
+			},
+			"btnTxt_1":{
+				"text" :"Review Answers"
+			},
+			"btnTxt_2":{
+				"text" :"Retake Quiz"
+			}
+			'.
+			$middlecontent.'
+			
+
+		}
+	]
+}	
+			';
+			
+		$result = $this->edenfile->set($target3)->setContent($content);							
+							
+		//page_2 content
+		$target2 = $target.'/page_2.js';
+		
+		
+		if( strtolower($params['randomize']) == 'yes' ){	
+		
+			$randomize_txt = '"randomizationOption":{';
+			
+			if($params['category_based'] == 'true'){
+				$randomize_txt .='"type" :"module/objective",';
+				$randomize_txt .='"questionsineachModule" :"'.$params['maximum_questions_to_be_displayed_from_each_module'].'",';
+				$randomize_txt .='"questionsineachObjective" :"'.$params['maximum_questions_in_each_objective'].'",';			
+				$randomize_txt .='"numberofQuestionstodisplayed" :"'.$params['questions_in_assessment'].'",';			
+				$randomize_txt .='"assessmentTime" :"'.$params['assessment_time'].'"';			
+		
+			}
+			else {
+				$randomize_txt .='"type" :"question",';
+				$randomize_txt .='"questionsineachModule" :"0",';
+				$randomize_txt .='"questionsineachObjective" :"0",';			
+				$randomize_txt .='"numberofQuestionstodisplayed" :"'.$params['questions_in_assessment'].'",';			
+				$randomize_txt .='"assessmentTime" :"'.$params['assessment_time'].'"';			
+
+			}
+			
+			$randomize_txt .= ',"randomzetypeselected" : "yes"  },';
+			 
+		
+		}
+		else {
+			
+			$randomize_txt = '"randomizationOption":{';
+			$randomize_txt .='"type" :"question",';
+			$randomize_txt .='"questionsineachModule" :"0",';
+			$randomize_txt .='"questionsineachObjective" :"0",';			
+			$randomize_txt .='"numberofQuestionstodisplayed" :"'.$params['questions_in_assessment'].'",';			
+			$randomize_txt .='"assessmentTime" :"'.$params['assessment_time'].'",';	
+			$randomize_txt .= '"randomzetypeselected" : "no"  },';		
+
+			
+		}
+		
+
+		$content = '{
+	"ExternalData": [
+		{
+		"txtVar_1":{
+				"text" :"Please choose the correct option.",
+				"description" :""
+			} ,
+			"txtVar_2":{
+				"text" :"Select all that apply.",
+				"description" :""
+			} ,	
+			"txtVar_3":{
+				"text" :"Please choose the correct option.",
+				"description" :""
+			} ,
+			"submitTxt":{
+				"text" :"Submit",
+				"description" :""
+			},
+			"tryAgainText":{
+				"text" :"Try again",
+				"description" :""
+			},
+			"solutionText":{
+				"text" :"Solution",
+				"description" :""
+			},
+			"scoreText":{
+				"text" :"Score",
+				"description" :""
+			},		
+			'.
+			$randomize_txt.
+			
+			$qcontent
+			
+			.'
+			
+
+		}
+	]
+}	
+		';
+		
+		$result = $this->edenfile->set($target2)->setContent($content);
+			
+		return true;	
+	}
+	function writeqaswithoutRandomize( $data = null){
+		
+		if(!$data){
+			return array();
+		}
+		
+		$newattay=array();
+		//echo '<pre>'; print_r( $data); echo '</pre>'; exit;
+		foreach( $data as $mod ){
+		  foreach( $mod['objectives'] as $obj ){
+			  foreach( $obj['questions'] as $qns ){
+				//echo '<pre>'; print_r( $qns); echo '</pre>'; 
+				$newattay[] =  $qns; 
+			  }
+		  }
+		}
+		//echo 'came'; exit;
+		$result = '';
+		if($newattay){
+			$result = self::custom_shuffle($newattay);
+		}
+		return $result; 
+	}
+	function custom_shuffle($my_array = array()) {
+	  $copy = array();
+	  while (count($my_array)) {
+ 
+		$element = array_rand( $my_array );
+		
+		// assign the array and its value to an another array
+		$copy[$element] = $my_array[$element];
+		//delete the element from source array
+		unset($my_array[$element]);
+	  }
+ 
+	  return $copy;
+	}
+	function deleteDir($path) {
+		
+		return is_file($path) ?
+				@unlink($path) :
+				array_map(__FUNCTION__, glob($path.'/*')) == @rmdir($path);
+	}	
+}
