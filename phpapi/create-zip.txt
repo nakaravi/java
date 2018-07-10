@@ -1,0 +1,654 @@
+<?php
+/*
+Owner: Origin Learning Solutions Pvt Ltd.
+Description: Class to handle all API request for Scorm Content Creation
+Edited by: Sriram
+*/
+
+namespace App\Controllers\Content;
+use \App\Controllers\Controller;
+use \Respect\Validation\Validator as Respect;
+
+class ContentScormController extends Controller{
+	/*
+	Description: 			This method is used to create a scorm content upon an API request.
+	Edited by: 				Sriram
+	Modified Date: 			12:43 15-02-2017
+	*/
+	public function createScormContent($request,$response)
+	{
+		$paramValidationResult = $this->verifyParams($request,$response,'create');
+		if($paramValidationResult === true)
+		{
+			$formData['site_content']['content_key'] 			= $this->uuid('scorm');
+			$formData['site_content']['version'] 				= "1";
+			$formData['site_content']['tag'] 					= $this->db2->escape($request->getParsedBody()['tag']);
+			$formData['site_content']['type'] 					= $this->db2->escape($request->getParsedBody()['type']);
+			$formData['site_content']['master_module_id'] 		= 1; //$request->getParsedBody()['master_module_id'];
+			$formData['site_content']['description'] 			= $this->db2->escape($request->getParsedBody()['description']);
+			$formData['site_content']['visible'] 				= 1;
+			$formData['site_content']['completion'] 			= 1;
+			$formData['site_content']['createdon'] 				= date('Y-m-y H:i:s', time());
+			$formData['site_content']['active'] 				= 1;
+			$formData['site_content']['sub_type'] 				= $this->db2->escape($request->getParsedBody()['method']);
+
+
+			//extraction block starts here
+			$uploadedFile = $request->getUploadedFiles()['scorm_uploaded_file'];
+			$timeStampDirectory = time();
+
+			$appDirectory = ROOT_DIR;
+
+			if($uploadedFile->getError() === 0 && $uploadedFile->getClientMediaType() == 'application/octet-stream')
+			{
+				$zipObject = new \ZipArchive;
+				$uploadedZIPFile = $appDirectory .'/tempdata/uploads/'.$uploadedFile->getClientFilename();
+				$uploadedFile->moveTo($uploadedZIPFile);
+				if($zipObject->open($uploadedZIPFile) == TRUE)
+				{
+					$data_path = $this->container['settings']['sConfig']['data_path'];
+					if(!$this->eden->set($data_path.'/client_origin/scorm/')->isFolder())
+					{
+						$this->eden->set($data_path.'/client_origin/scorm/')->create();
+					}
+					$destinationDir = "/customer_data/client_origin/scorm/{$formData['site_content']['content_key']}/version{$formData['site_content']['version']}";
+					$fullDestinationDir = $appDirectory.$destinationDir;
+					$xmlFilePath = $fullDestinationDir.'/imsmanifest.xml';
+
+					chmod($fullDestinationDir, 0600);
+					//extract uploaded zip file
+					$zipObject->extractTo($fullDestinationDir);
+					$zipObject->close();
+
+					//read xml file
+					$fileObject = fopen($xmlFilePath,'r') or die("Unable to open file!");
+					$xmlData = fread($fileObject, filesize($xmlFilePath));
+					fclose($fileObject);
+
+					//process xml file
+					$XMLObject = new \SimpleXMLElement($xmlData, 0);
+					$contentVersion = ((array)$XMLObject->metadata->schemaversion);
+					$formData['site_content']['name'] = $this->db2->escape($request->getParsedBody()['name']);
+					$formData['site_content']['version'] = 1;
+					$formData['site_content']['params']['version'] = $contentVersion[0];
+					$formData['site_content']['params']['uploaded_file_version1'] = $destinationDir;
+					//$formData['site_content']['params'] = [];
+					foreach($formData['site_content']['params'] as $key=>$value)
+					{
+						$formData['site_content']['params'][$key] = $this->db2->escape($value);
+					}
+					$formData['site_content']['params'] = json_encode([$formData['site_content']['params']]);
+				}
+				else
+				{
+					$output = ['status'=>1,'result'=>'failed','data'=> []];
+					return $response->withJson($output);
+				}
+
+				$data = [
+					'content_key'		=>	$formData['site_content']['content_key'],
+					'name'				=>	$formData['site_content']['name'],
+					'version'			=>	$formData['site_content']['version'],
+					'tag'				=>	$formData['site_content']['tag'],
+					'type'				=>	$formData['site_content']['type'],
+					'sub_type'			=>	$formData['site_content']['sub_type'],
+					'master_module_id'	=>	$formData['site_content']['master_module_id'],
+					'description'		=>	$formData['site_content']['description'],
+					'params'			=>	$formData['site_content']['params'],
+					'createdon'			=>	$formData['site_content']['createdon'],
+					'visible'			=>	$formData['site_content']['visible'],
+					'completion'		=>	$formData['site_content']['completion'],
+					'duration'			=>	'NA',
+					'active'			=>	$formData['site_content']['active'],
+				];
+
+				$siteContent_id = $this->db2->insert('site_content', $data);
+
+				if (is_numeric($siteContent_id))
+				{
+					$index = 0;
+					$sort = 1;
+					if(count($XMLObject->organizations->organization->item->children())> 1 )
+					{
+						foreach($XMLObject->organizations->organization->item as $organizationItem)
+						{
+							$organizationParent 	= (string)$organizationItem['identifier'];
+							$organizationItemTitle	= (string)$organizationItem->title;
+							foreach($organizationItem->item as $itemItem)
+							{
+								$itemIdentifier		= (string)$itemItem['identifier'];
+								$itemIdentifierRef	= (string)$itemItem['identifierref'];
+								$itemTitle			= (string)$itemItem->title;
+
+								foreach($XMLObject->resources->resource as $resourcesResource)
+								{
+									if($itemIdentifierRef === ((string)$resourcesResource['identifier']))
+									{
+										$formData['mdl_scorm_scoes']['content_id'] 			= $siteContent_id;
+										$formData['mdl_scorm_scoes']['title'] 				= $itemTitle;
+										$formData['mdl_scorm_scoes']['manifest'] 			= (string)$XMLObject['identifier'];
+										$formData['mdl_scorm_scoes']['organization'] 		= (string)$XMLObject->organizations['default'];
+										$formData['mdl_scorm_scoes']['identifier'] 			= $itemIdentifier;
+										$formData['mdl_scorm_scoes']['launch'] 				= (string)$resourcesResource['href'];
+										$formData['mdl_scorm_scoes']['scormtype'] 			= "SCO";
+										$formData['mdl_scorm_scoes']['sortorder'] 			= $sort++;
+										$formData['mdl_scorm_scoes']['active'] 				= 1;
+										$formData['mdl_scorm_scoes']['version'] 			= 1;
+
+										$data = [
+											'content_id'	=>	$formData['mdl_scorm_scoes']['content_id'],
+											'title'			=>	$formData['mdl_scorm_scoes']['title'],
+											'manifest'		=>	$formData['mdl_scorm_scoes']['manifest'],
+											'organization'	=>	$formData['mdl_scorm_scoes']['organization'],
+											'identifier'	=>	$formData['mdl_scorm_scoes']['identifier'],
+											'launch'		=>	$formData['mdl_scorm_scoes']['launch'],
+											'scormtype'		=>	$formData['mdl_scorm_scoes']['scormtype'],
+											'title'			=>	$formData['mdl_scorm_scoes']['title'],
+											'sortorder'		=>	$formData['mdl_scorm_scoes']['sortorder'],
+											'version'		=>	$formData['mdl_scorm_scoes']['version'],
+											'active'		=>	$formData['mdl_scorm_scoes']['active'],
+										];
+										$scormScoesId = $this->db2->insert('site_scorm_scoes', $data);
+									}
+								}
+							}
+						}
+					}
+					else
+					{
+						$organizationItem = $XMLObject->organizations->organization->item;
+						$organizationParent 	= (string)$organizationItem['identifier'];
+						$organizationItemTitle	= (string)$organizationItem->title;
+						$itemItem = $organizationItem;
+
+						$itemIdentifier		= (string)$itemItem['identifier'];
+						$itemIdentifierRef	= (string)$itemItem['identifierref'];
+						$itemTitle			= (string)$itemItem->title;
+
+						$resourcesResource = $XMLObject->resources->resource;
+						$formData['mdl_scorm_scoes']['content_id'] 			= $siteContent_id;
+						$formData['mdl_scorm_scoes']['title'] 				= $itemTitle;
+						$formData['mdl_scorm_scoes']['manifest'] 			= (string)$XMLObject['identifier'];
+						$formData['mdl_scorm_scoes']['organization'] 		= (string)$XMLObject->organizations['default'];
+						$formData['mdl_scorm_scoes']['identifier'] 			= $itemIdentifier;
+						$formData['mdl_scorm_scoes']['launch'] 				= (string)$resourcesResource['href'];
+						$formData['mdl_scorm_scoes']['scormtype'] 			= "SCO";
+						$formData['mdl_scorm_scoes']['title'] 				= $itemTitle;
+						$formData['mdl_scorm_scoes']['sortorder'] 			= $sort++;
+						$formData['mdl_scorm_scoes']['active'] 				= 1;
+						$formData['mdl_scorm_scoes']['version'] 			= 1;
+
+						$data = [
+							'content_id'	=>	$formData['mdl_scorm_scoes']['content_id'],
+							'title'			=>	$formData['mdl_scorm_scoes']['title'],
+							'manifest'		=>	$formData['mdl_scorm_scoes']['manifest'],
+							'organization'	=>	$formData['mdl_scorm_scoes']['organization'],
+							'identifier'	=>	$formData['mdl_scorm_scoes']['identifier'],
+							'launch'		=>	$formData['mdl_scorm_scoes']['launch'],
+							'scormtype'		=>	$formData['mdl_scorm_scoes']['scormtype'],
+							'title'			=>	$formData['mdl_scorm_scoes']['title'],
+							'sortorder'		=>	$formData['mdl_scorm_scoes']['sortorder'],
+							'version'		=>	$formData['mdl_scorm_scoes']['version'],
+							'active'		=>	$formData['mdl_scorm_scoes']['active'],
+						];
+						$scormScoesId = $this->db2->insert('site_scorm_scoes', $data);
+					}
+				}
+				else
+				{
+					unlink($uploadedZIPFile);
+					$output = ['status'=>1,'result'=>'failed','data'=> []];
+					return $response->withJson($output);
+				}
+
+				unlink($uploadedZIPFile);
+			}
+			else
+			{
+				$output = ['status'=>1,'result'=>'failed','data'=> ['upload error']];
+				return $response->withJson($output);
+
+			}
+
+			if(is_numeric($siteContent_id) && is_numeric($scormScoesId))
+			{
+				$data = $this->db2->selectOne('SELECT * FROM site_content WHERE id = ' . $siteContent_id);
+				$output = ['status'=>0,'result'=>'success','data'=> $data];
+				return $response->withJson($output);
+			}
+			else
+			{
+				$output = ['status'=>1,'result'=>'failed','data'=> ['insert error']];
+				return $response->withJson($output);
+			}
+		}
+		else
+		{
+			return $paramValidationResult;
+		}
+	}
+
+
+	/*
+	Description: This method is used to update a scorm content upon an API request.
+	Edited by: 				Sriram
+	Modified Date: 			12:43 15-02-2017
+	*/
+	public function editScormContent($request,$response,$args)
+	{
+		if(isset($args['key']))
+		{
+			$siteContent_id = (int)$args['key'];
+		}
+		else
+		{
+			$siteContent_id = 0;
+		}
+		$keyStatus = $this->verifyKey($response,$siteContent_id);
+		if($keyStatus === true)
+		{
+			$siteContent = $this->db2->selectAll('SELECT * FROM site_content WHERE active = 1 AND id = ' . $siteContent_id);
+
+			if(count($siteContent) == 1)
+			{
+				$updatedVersion = ($siteContent[0]['version'])+1;
+				$paramValidationResult = $this->verifyParams($request,$response,'edit');
+				if($paramValidationResult === true)
+				{
+					$formData['site_content']['params'] = [];
+					foreach($formData['site_content']['params'] as $key=>$value)
+					{
+						$formData['site_content']['params'][$key] = $this->db2->escape($value);
+					}
+
+					$formData['site_content']['id'] 					= $siteContent_id;
+					$formData['site_content']['version'] 				= $updatedVersion;
+					$formData['site_content']['content_key'] 			= $siteContent[0]['content_key'];
+					$formData['site_content']['master_module_id'] 		= $siteContent[0]['master_module_id'];
+					$formData['site_content']['visible'] 				= $siteContent[0]['visible'];;
+					$formData['site_content']['completion'] 			= $siteContent[0]['completion'];; //$request->getParsedBody()['completion'];
+					$formData['site_content']['tag'] 					= $this->db2->escape($request->getParsedBody()['tag']);
+					$formData['site_content']['description'] 			= $this->db2->escape($request->getParsedBody()['description']);
+					$formData['site_content']['timemodified'] 			= time();
+					$formData['site_content']['params'] 				= "";
+					$formData['site_content']['active']					= 1;
+					$formData['site_content']['sub_type'] 				= $this->db2->escape($request->getParsedBody()['method']);
+
+					//extraction block starts here
+					$uploadedFile = $request->getUploadedFiles()['scorm_uploaded_file'];
+					$timeStampDirectory = time();
+
+					$appDirectory = ROOT_DIR;
+
+					if($uploadedFile->getError() === 0 && $uploadedFile->getClientMediaType() == 'application/octet-stream')
+					{
+						$zipObject = new \ZipArchive;
+						$uploadedZIPFile = $appDirectory .'/tempdata/uploads/'.$uploadedFile->getClientFilename();
+						$uploadedFile->moveTo($uploadedZIPFile);
+						if($zipObject->open($uploadedZIPFile) == TRUE)
+						{
+							$destinationDir = "/customer_data/client_origin/scorm/{$formData['site_content']['content_key']}/version{$formData['site_content']['version']}";
+							$fullDestinationDir = $appDirectory.$destinationDir;
+							$xmlFilePath = $fullDestinationDir.'/imsmanifest.xml';
+
+							//extract uploaded zip file
+							$zipObject->extractTo($fullDestinationDir);
+							$zipObject->close();
+
+							//read xml file
+							$fileObject = fopen($xmlFilePath,'r') or die("Unable to open file!");
+							$xmlData = fread($fileObject, filesize($xmlFilePath));
+							fclose($fileObject);
+
+							//process xml file
+							$XMLObject = new \SimpleXMLElement($xmlData, 0);
+							$contentVersion = ((array)$XMLObject->metadata->schemaversion);
+							$formData['site_content']['name'] = $this->db2->escape($request->getParsedBody()['name']);
+							$formData['site_content']['params']['version'] = $contentVersion[0];
+							$formData['site_content']['params']['uploaded_file_version'.$updatedVersion] = $destinationDir;
+							foreach($formData['site_content']['params'] as $key=>$value)
+							{
+								$formData['site_content']['params'][$key] = $this->db2->escape($value);
+							}
+							$formData['site_content']['params'] = json_encode([$formData['site_content']['params']]);
+						}
+						else
+						{
+							$output = ['status'=>1,'result'=>'failed','data'=> ['incorrect file uploaded']];
+							return $response->withJson($output);
+						}
+
+						$data = [
+							'content_key'		=>	$formData['site_content']['content_key'],
+							'name'				=>	$formData['site_content']['name'],
+							'version'			=>	$formData['site_content']['version'],
+							'tag'				=>	$formData['site_content']['tag'],
+							'sub_type'			=>	$formData['site_content']['sub_type'],
+							'master_module_id'	=>	$formData['site_content']['master_module_id'],
+							'description'		=>	$formData['site_content']['description'],
+							'params'			=>	$formData['site_content']['params'],
+							'visible'			=>	$formData['site_content']['visible'],
+							'completion'		=>	$formData['site_content']['completion'],
+							'duration'			=>	'NA',
+							'active'			=>	$formData['site_content']['active'],
+							'timemodified'		=> time(),
+						];
+						$where = ['id'=>$siteContent_id];
+						$siteContentUpdateStatus = $this->db2->update('site_content', $data, $where);
+
+						if ($siteContentUpdateStatus == 1)
+						{
+							$index = 0;
+							$sort = 1;
+							if(count($XMLObject->organizations->organization->item->children())> 1 )
+							{
+								foreach($XMLObject->organizations->organization->item as $organizationItem)
+								{
+									$organizationParent 	= (string)$organizationItem['identifier'];
+									$organizationItemTitle	= (string)$organizationItem->title;
+									foreach($organizationItem->item as $itemItem)
+									{
+										$itemIdentifier		= (string)$itemItem['identifier'];
+										$itemIdentifierRef	= (string)$itemItem['identifierref'];
+										$itemTitle			= (string)$itemItem->title;
+
+										foreach($XMLObject->resources->resource as $resourcesResource)
+										{
+											if($itemIdentifierRef === ((string)$resourcesResource['identifier']))
+											{
+												$formData['mdl_scorm_scoes']['content_id'] 			= $siteContent_id;
+												$formData['mdl_scorm_scoes']['title'] 				= $itemTitle;
+												$formData['mdl_scorm_scoes']['manifest'] 			= (string)$XMLObject['identifier'];
+												$formData['mdl_scorm_scoes']['organization'] 		= (string)$XMLObject->organizations['default'];
+												$formData['mdl_scorm_scoes']['identifier'] 			= $itemIdentifier;
+												$formData['mdl_scorm_scoes']['launch'] 				= (string)$resourcesResource['href'];
+												$formData['mdl_scorm_scoes']['scormtype'] 			= "SCO";
+												$formData['mdl_scorm_scoes']['sortorder'] 			= $sort++;
+												$formData['mdl_scorm_scoes']['active'] 				= 1;
+												$formData['mdl_scorm_scoes']['version'] 			= $updatedVersion;
+
+												$data = [
+													'content_id'	=>	$formData['mdl_scorm_scoes']['content_id'],
+													'title'			=>	$formData['mdl_scorm_scoes']['title'],
+													'manifest'		=>	$formData['mdl_scorm_scoes']['manifest'],
+													'organization'	=>	$formData['mdl_scorm_scoes']['organization'],
+													'identifier'	=>	$formData['mdl_scorm_scoes']['identifier'],
+													'launch'		=>	$formData['mdl_scorm_scoes']['launch'],
+													'scormtype'		=>	$formData['mdl_scorm_scoes']['scormtype'],
+													'title'			=>	$formData['mdl_scorm_scoes']['title'],
+													'sortorder'		=>	$formData['mdl_scorm_scoes']['sortorder'],
+													'version'		=>	$formData['mdl_scorm_scoes']['version'],
+													'active'		=>	$formData['mdl_scorm_scoes']['active'],
+												];
+												$scormScoesId = $this->db2->insert('site_scorm_scoes', $data);
+											}
+										}
+									}
+								}
+							}
+							else
+							{
+								$organizationItem = $XMLObject->organizations->organization->item;
+								$organizationParent 	= (string)$organizationItem['identifier'];
+								$organizationItemTitle	= (string)$organizationItem->title;
+								$itemItem = $organizationItem;
+
+								$itemIdentifier		= (string)$itemItem['identifier'];
+								$itemIdentifierRef	= (string)$itemItem['identifierref'];
+								$itemTitle			= (string)$itemItem->title;
+
+								$resourcesResource = $XMLObject->resources->resource;
+								$formData['mdl_scorm_scoes']['content_id'] 			= $siteContent_id;
+								$formData['mdl_scorm_scoes']['title'] 				= $itemTitle;
+								$formData['mdl_scorm_scoes']['manifest'] 			= (string)$XMLObject['identifier'];
+								$formData['mdl_scorm_scoes']['organization'] 		= (string)$XMLObject->organizations['default'];
+								//$formData['mdl_scorm_scoes']['parent'] 			= $organizationParent;
+								$formData['mdl_scorm_scoes']['identifier'] 			= $itemIdentifier;
+								$formData['mdl_scorm_scoes']['launch'] 				= (string)$resourcesResource['href'];
+								$formData['mdl_scorm_scoes']['scormtype'] 			= "SCO";
+								$formData['mdl_scorm_scoes']['sortorder'] 			= $sort++;
+								$formData['mdl_scorm_scoes']['active'] 				= 1;
+								$formData['mdl_scorm_scoes']['version'] 			= $updatedVersion;
+
+								$data = [
+									'content_id'	=>	$formData['mdl_scorm_scoes']['content_id'],
+									'title'			=>	$formData['mdl_scorm_scoes']['title'],
+									'manifest'		=>	$formData['mdl_scorm_scoes']['manifest'],
+									'organization'	=>	$formData['mdl_scorm_scoes']['organization'],
+									'identifier'	=>	$formData['mdl_scorm_scoes']['identifier'],
+									'launch'		=>	$formData['mdl_scorm_scoes']['launch'],
+									'scormtype'		=>	$formData['mdl_scorm_scoes']['scormtype'],
+									'title'			=>	$formData['mdl_scorm_scoes']['title'],
+									'sortorder'		=>	$formData['mdl_scorm_scoes']['sortorder'],
+									'version'		=>	$formData['mdl_scorm_scoes']['version'],
+									'active'		=>	$formData['mdl_scorm_scoes']['active'],
+								];
+								$scormScoesId = $this->db2->insert('site_scorm_scoes', $data);
+							}
+						}
+						else
+						{
+							unlink($uploadedZIPFile);
+							$output = ['status'=>1,'result'=>'failed','data'=> ['updation problem']];
+							return $response->withJson($output);
+						}
+						unlink($uploadedZIPFile);
+					}
+					else
+					{
+						$output = ['status'=>1,'result'=>'failed','data'=> ['upload_error']];
+						return $response->withJson($output);
+
+					}
+
+					if(is_numeric($siteContent_id) && is_numeric($scormScoesId))
+					{
+						$data = $this->db2->selectAll('SELECT * FROM site_content WHERE active = 1 AND id = ' . $siteContent_id);
+						$output = ['status'=>0,'result'=>'success','data'=> $data];
+						return $response->withJson($output);
+					}
+					else
+					{
+						$output = ['status'=>1,'result'=>'failed','data'=> ['insert error']];
+						return $response->withJson($output);
+					}
+				}
+				else
+				{
+					return $paramValidationResult;
+				}
+			}
+			else
+			{
+				$output = ['status'=>0,'result'=>'success','data'=> ['record not found']];
+				return $response->withJson($output);
+			}
+		}
+		else
+		{
+			return $keyStatus;
+		}
+	}
+
+	/*
+	Description: 			This method is used to view a scorm content upon an API request.
+	Edited by: 				Sriram
+	Modified Date: 			19:51 07-02-2017
+	*/
+	public function viewScormContent($request,$response,$args)
+	{
+		if(null !== ((int)$args['key']))
+		{
+			$siteContent_id = (int)$args['key'];
+		}
+		else
+		{
+			$siteContent_id = 0;
+		}
+		$keyStatus = $this->verifyKey($response,$siteContent_id);
+		if($keyStatus === true)
+		{
+			$data = $this->db2->selectOne('SELECT * FROM site_content WHERE active = 1 AND id = ' . $siteContent_id);
+			if($data != '')
+			{
+				$output = ['status'=>0,'result'=>'success','data'=> [$data]];
+			}
+			else
+			{
+				$output = ['status'=>1,'result'=>'failed','data'=> []];
+			}
+			return $response->withJson($output);
+		}
+		else
+		{
+			return $keyStatus;
+		}
+	}
+
+	/*
+	Description: 			This method is used to delete a scorm content upon an API request.
+	Edited by: 				Sriram
+	Modified Date: 			19:07 20-02-2017
+	*/
+	public function deleteScormContent($request,$response,$args)
+	{
+		if(null !== ((int)$args['key']))
+		{
+			$siteContent_id = (int)$args['key'];
+		}
+		else
+		{
+			$siteContent_id = 0;
+		}
+		$keyStatus = $this->verifyKey($response,$siteContent_id);
+		if($keyStatus === true)
+		{
+			$data = $this->db2->selectAll('SELECT * FROM site_content WHERE active = 1 AND type="ELearning" AND id = ' . $siteContent_id);
+			if(count($data) == 1)
+			{
+				$deleteStatus = $this->db2->update('site_content', ['active' => 0],['id' => $siteContent_id]);
+				if($deleteStatus == 1)
+				{
+					$output = ['status'=>0,'result'=>'success','data'=> []];
+					return $response->withJson($output);
+				}
+				else
+				{
+					$output = ['status'=>1,'result'=>'failed','data'=> []];
+					return $response->withJson($output);
+				}
+			}
+			else
+			{
+				$output = ['status'=>1,'result'=>'failed','data'=> ['no records found']];
+				return $response->withJson($output);
+			}
+		}
+		else
+		{
+			return $keyStatus;
+		}
+	}
+
+	/*
+	Description: 			This method is used to list or/and search all contents upon an API request based.
+	Edited by: 				Sriram
+	Modified Date: 			19:07 20-02-2017
+	*/
+	public function listScormContent($request,$response)
+	{
+		if(null !== ($request->getAttribute('search')))
+		{
+			$search = $request->getAttribute('search');
+			$search = "AND (name LIKE '%{$search}%' OR tag LIKE '%{$search}%')";
+		}
+		else
+		{
+			$search = "";
+		}
+
+		$resultSet = $this->db2->selectAll("SELECT * FROM site_content WHERE active = 1 AND type='ELearning' $search");
+		$output = ['status'=>0,'result'=>'success', 'data'=> $resultSet];
+		return $response->withJson($output);
+	}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/*
+	Description: 			This method is used to verify the validity of passed params upon an API request.
+	Edited by: 				Sriram
+	Modified Date: 			12:43 15-02-2017
+	*/
+	public function verifyParams($request, $response, $operation)
+	{
+		$this->errorList=[];
+		$tagValidate = Respect::stringType()->notEmpty()->validate($request->getParsedBody()['tag']);
+		if(!$tagValidate)
+		{
+			$this->errorList[] = 'tag field is empty';
+		}
+		$typeValidate = Respect::stringType()->notEmpty()->validate($request->getParsedBody()['type']);
+		if($operation == 'create' && !($typeValidate))
+		{
+			$this->errorList[] = 'type parameter missing';
+		}
+		$descriptionValidate = Respect::stringType()->notEmpty()->validate($request->getParsedBody()['description']);
+		if(!$descriptionValidate)
+		{
+			$this->errorList[] = 'description field is empty';
+		}
+		if(!isset($request->getUploadedFiles()['scorm_uploaded_file']) || $request->getUploadedFiles()['scorm_uploaded_file'] == '')
+		{
+			$this->errorList[] = 'upload file parameter missing';
+		}
+		if(!empty($this->errorList))
+		{
+			$output=['status'=>2,'result'=>'validation failed','data'=>$this->errorList];
+			return $this->sendOutputJSON($output);
+		}
+		else
+		{
+			return true;
+		}
+	}
+
+	/*
+	Description: 			This method is used to verify the key an API request.
+	Edited by: 				Sriram
+	Modified Date: 			19:51 07-02-2017
+	*/
+	public function verifyKey($response,$siteContent_id)
+	{
+
+		if(!Respect::notEmpty()->notBlank()->numeric()->between(1)->validate($siteContent_id))
+		{
+			$output = ['status'=>1,'result'=>'validation failed','data'=>['key missing/invalid']];
+			return $response->withJson($output);
+		}
+		/*if(!isset($siteContent_id) || $siteContent_id == '' || $siteContent_id == 0)
+		{
+			$output = ['status'=>1,'result'=>'key Missing','data'=>[]];
+			return $response->withJson($output);
+		}*/
+		return true;
+	}
+
+}
