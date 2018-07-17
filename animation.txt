@@ -1,6 +1,9 @@
 Animation Libraries
 *******************
 https://blog.bitsrc.io/11-javascript-animation-libraries-for-2018-9d7ac93a2c59
+https://ihatetomatoes.net/guide-to-html5-canvas-javascript-libraries/
+http://www.shanemielke.com/archives/usopen-sessions/
+
 
 
 SVG Animation
