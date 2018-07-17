@@ -1,3 +1,8 @@
+Animation Libraries
+*******************
+https://blog.bitsrc.io/11-javascript-animation-libraries-for-2018-9d7ac93a2c59
+
+
 SVG Animation
 *************
 http://snapsvg.io/docs/ **************download/document
