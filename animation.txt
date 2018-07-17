@@ -1,3 +1,9 @@
+SVG Animation
+*************
+http://svg.dabbles.info/
+
+
+
 cloud animation
 ***************
 https://webat.net/cloud-background-animation-using-css-svg/
