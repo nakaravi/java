@@ -1,6 +1,7 @@
 SVG Animation
 *************
-http://svg.dabbles.info/
+http://snapsvg.io/docs/ **************download/document
+http://svg.dabbles.info/ *************example******
 
 
 
