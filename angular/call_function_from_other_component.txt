@@ -1,0 +1,67 @@
+Angular 4 execute function from another component 
+*************************************************
+
+Create a service like this
+
+import { Injectable } from '@angular/core';
+import { Observable } from 'rxjs/Observable';
+import { Subject } from 'rxjs/Subject';
+
+@Injectable()
+export class MessageService {
+    private _listners = new Subject<any>();
+
+    listen(): Observable<any> {
+       return this._listners.asObservable();
+    }
+
+    filter(filterBy: string) {
+       this._listners.next(filterBy);
+    }
+
+}
+then implement in your header component like this
+
+// header.component.ts
+@Component({
+    selector: 'header',
+    templateUrl: `
+        <section class="container">
+            <button (click)="clickFilter()">Open filter</button>
+        </section>
+    `
+ })
+
+export class HeaderComponent {
+     @Output() onFilter: EventEmitter = new EventEmitter();
+
+     constructor(private _messageService: MessageService){}
+     clickFilter():void {
+         // this.onFilter.emit('Register click');
+         this._messageService.filter('Register click');
+     }
+ }
+then use in your store component like this
+
+@Component({
+    selector: 'store',
+    template: `<article class="card">
+                 Test
+              </article>`
+})
+
+export class StoreComponent {
+    constructor(private _messageService: MessageService){
+        this._messageService.listen().subscribe((m:any) => {
+            console.log(m);
+            this.onFilterClick(m);
+        })
+    }
+
+    onFilterClick(event) {
+        console.log('Fire onFilterClick: ', event);
+    }
+ }
+The concept is that you can use observable in a service and subscribe in the component where you want it (store.component) and can send event from anywhere in the app like i did in the header.component
+
+I hope it will help you
