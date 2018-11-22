@@ -1,0 +1,22 @@
+<md-input #myInput placeholder="Item name..." [(ngModel)]="name" (input)="filterItem(myInput.value)"></md-input>
+
+<div *ngFor="let item of filteredItems">
+   {{item.name}}
+</div>
+
+
+
+
+Code
+
+assignCopy(){|
+   this.filteredItems = Object.assign([], this.items);
+}
+filterItem(value){
+   if(!value) this.assignCopy(); //when nothing has typed
+   this.filteredItems = Object.assign([], this.items).filter(
+      item => item.name.toLowerCase().indexOf(value.toLowerCase()) > -1
+   )
+}
+this.assignCopy();//when you fetch collection from server.
+shareimprove this answer
