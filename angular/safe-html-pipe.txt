@@ -1,0 +1,16 @@
+import { Component, OnInit, Pipe, PipeTransform } from '@angular/core';
+import { DomSanitizer } from '@angular/platform-browser'
+
+@Pipe({ name: 'safeHtml' })
+export class SafeHtmlPipe implements PipeTransform {
+  constructor(private sanitized: DomSanitizer) { }
+  transform(value) {
+    return this.sanitized.bypassSecurityTrustHtml(value);
+  }
+}
+Component HTML.
+
+<div [innerHtml]="html | safeHtml"></div>
+In your component define a variable that will hold the HTML value.
+
+html: string = "<p style='margin: 1em 0px; font-size: 18px; line-height: 1.5; font-family: Lato, sans-serif;'>Hey Android users! Since launching the Grammarly Keyboard for iOS, we&rsquo;ve heard from </p>";
