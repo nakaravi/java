@@ -1,0 +1,5 @@
+app.get('/contactus.html', function(req,res) {
+    data= fs.readFile('/home/swift-03/WebstormProjects/website/static/HTML/contactus.html',   function (err, data) {
+    res.setHeader('Content-Type', 'text/html');
+    res.send(data);
+});
