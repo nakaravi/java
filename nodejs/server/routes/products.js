@@ -7,6 +7,7 @@ const router = express.Router();
 //get all records
 router.get('/', (req, res) => {
 	connection.query('SELECT * from products', function (error, results, fields) {
+		
 		if (error) throw error;
 		var resultJson = JSON.stringify(results);
 		resultJson = JSON.parse(resultJson);
