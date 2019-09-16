@@ -8,6 +8,8 @@ global.cors 		= require('cors');
 global.bodyParser 	= require('body-parser');
 global.mysql      	= require('mysql');
 
+
+
 global.connection 	= mysql.createConnection({ 
 	host:"localhost",
 	user: "root", 
@@ -16,9 +18,10 @@ global.connection 	= mysql.createConnection({
 });
 
 global.mongoClient	= require('mongodb').MongoClient;
-mongoClient.connect('mongodb://localhost:27017/abi',{ useNewUrlParser: true });
-global.mongoCon		= mongoClient.connection;
-global.schema		= mongoClient.Schema;
+//mongoClient.connect('mongodb://localhost:27017/abi',{ useNewUrlParser: true });
+
+//global.mongoCon		= mongoClient.connection;
+//global.schema		= mongoClient.Schema;
 
 // Get our API routes
 const mproducts 	= require('./server/routes/mproducts');
@@ -26,6 +29,8 @@ const products 	= require('./server/routes/products');
 const api 		= require('./server/routes/api');
 const data 		= require('./server/routes/data');
 const app 		= express();
+
+
 
 var bodyParser 	= require('body-parser');
 
