@@ -1,0 +1,43 @@
+<figure></figure>
+<style>
+body{
+    background:skyblue;
+}
+
+figure{
+    position:relative;
+    width:200px;
+    height:120px;
+    margin:100px auto;
+    overflow:hidden;
+    border:1px solid black;
+    border-right:none;
+    border-bottom:none;
+    border-bottom-left-radius: 5px;
+    border-top-left-radius: 5px;
+}
+figure:before,figure:after{
+    content: '';
+    position: absolute;  
+}
+figure:before{
+    right: -50%;
+    top: 0;
+    background: transparent;
+    width: 172px;
+    height: 200px;
+    border: 1px solid black;
+    border-radius: 100%;
+    box-shadow: 0 0 0 100em red;
+}
+figure:after{
+    left: -1px;
+    bottom: 0px;
+    height: 16px;
+    width: 128px;
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 5px;
+    border-left: 1px solid black;
+    border-bottom: 1px solid black;    
+}
+</style>
