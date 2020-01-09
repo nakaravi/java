@@ -1,0 +1,17 @@
+[
+	{
+		"state": "Tamilnadu",
+		"cities":["Chennai","Coimbatore", "Madurai", "Trichy", "Dindugal"]
+	},
+	{	"state": "Andhra",
+		"cities":["Hydrabad", "Tirupati", "Sittur", "Sehandrabad", "Guntur"]
+	},
+	{
+		"state": "Kerala",
+		"cities": ["Palakkad", "Trichur", "Kolikkodu", "Trivendram", "Ernakulam"]
+	},
+	{
+		"state": "Karnataka",
+		"cities": ["Bangalore", "Madivalam", "Mangalore", "Belleri", "Mysore"]
+	}
+]
