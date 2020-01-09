@@ -1,0 +1,159 @@
+Bouncing ball via on specific path
+**********************************
+<style>
+body {
+    background-color: ivory;
+}
+canvas {
+    border:1px solid red;
+}
+</style>
+
+<canvas id="canvas" width=300 height=300></canvas>
+<script>
+
+var canvas = document.getElementById("canvas");
+var ctx = canvas.getContext("2d");
+
+// save in a variable PI*2 since it's used often
+var PI2 = Math.PI * 2;
+
+// declare the starting and ending points of an imaginary line
+var p1 = {
+    x: 20,
+    y: 250
+};
+var p2 = {
+    x: 200,
+    y: 200
+};
+
+// declare where a bounce will start & end along that line
+// pct1==20%==bounce starts 20% of the way between p1 & p2
+// pct2==60%==bounce ends 60% of the way between p1 & p2
+var pct1 = 0.20;
+var pct2 = 0.60;
+
+// calculate deltaX & deltaY of an imaginary line
+// containing starting point (p1) & ending point (p2)
+var dx = p2.x - p1.x;
+var dy = p2.y - p1.y;
+
+// calculate starting point of bounce (20% from p1 towards p2)
+var x1 = p1.x + dx * pct1;
+var y1 = p1.y + dy * pct1;
+
+// calculate ending point of bounce (60% from p1 towards p2)
+var x2 = p1.x + dx * pct2;
+var y2 = p1.y + dy * pct2;
+
+// calculate mid point of bounce ((60-20)/2% from p1 towards p2)
+var pctMidpoint = pct1 + (pct2 - pct1) / 2;
+var midX = p1.x + dx * pctMidpoint;
+var midY = p1.y + dy * pctMidpoint;
+
+// define a distance (d) for the control point of a quadratic curve
+// d will indirectly determine how "high" the bounce will be
+var d = 75;
+
+// calculate a quadratic curve control point on the tangent line at distance d
+var ra = Math.atan2(dy, dx); // radian angle of the imaginary line
+var ta = ra - Math.PI / 2; // radian angle tangent to the imaginary line
+var controlX = midX + d * Math.cos(ta);
+var controlY = midY + d * Math.sin(ta);
+
+function drawIllustrations() {
+
+    // draw the imaginary line
+    ctx.beginPath();
+    ctx.moveTo(p1.x, p1.y);
+    ctx.lineTo(p2.x, p2.y);
+    ctx.strokeStyle = "green";
+    ctx.stroke();
+
+    ctx.beginPath();
+    // starting point of bounce
+    ctx.arc(x1, y1, 3, 0, PI2);
+    ctx.closePath();
+    // ending point of bounce
+    ctx.arc(x2, y2, 3, 0, PI2);
+    ctx.closePath();
+    // midpoint of bounce
+    ctx.arc(midX, midY, 3, 0, PI2);
+    ctx.closePath();
+    // control point of quadratic curve of bounce
+    ctx.arc(controlX, controlY, 3, 0, PI2);
+    ctx.closePath();
+    ctx.fillStyle = "red";
+    ctx.fill();
+
+    // line segment connecting midpoint and control points
+    ctx.beginPath();
+    ctx.moveTo(midX, midY);
+    ctx.lineTo(controlX, controlY);
+    ctx.strokeStyle = "red";
+    ctx.stroke();
+
+    // the quadratic curve of the bounce
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.quadraticCurveTo(controlX, controlY, x2, y2);
+    ctx.strokeStyle = "blue";
+    ctx.stroke();
+
+}
+
+var T = 0;
+var tDirection = 1;
+requestAnimationFrame(animate);
+
+// animate a ball along the quadratic curve
+function animate() {
+
+    requestAnimationFrame(animate);
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    drawIllustrations()
+
+    var point = getQuadraticBezierXYatT({
+        x: x1,
+        y: y1
+    }, {
+        x: controlX,
+        y: controlY
+    }, {
+        x: x2,
+        y: y2
+    },
+    T / 100);
+
+    ctx.beginPath();
+    ctx.arc(point.x, point.y, 5, 0, PI2);
+    ctx.closePath();
+    ctx.fillStyle = "blue";
+    ctx.fill();
+
+    // Move the ball to the next interval on the curve
+    // Reverse direction when the ball reaches the start/end of the curve
+    T += tDirection;
+    if (T < 0 || T > 100) {
+        tDirection *= -1;
+        T += tDirection;
+    }
+
+}
+
+
+
+function getQuadraticBezierXYatT(startPt, controlPt, endPt, T) {
+    var x = Math.pow(1 - T, 2) * startPt.x + 2 * (1 - T) * T * controlPt.x + Math.pow(T, 2) * endPt.x;
+    var y = Math.pow(1 - T, 2) * startPt.y + 2 * (1 - T) * T * controlPt.y + Math.pow(T, 2) * endPt.y;
+    return ({
+        x: x,
+        y: y
+    });
+}
+
+
+</script>
