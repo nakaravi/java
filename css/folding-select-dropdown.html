@@ -1,0 +1,441 @@
+<form>
+	<label for="os">OS</label>
+	<select id="os" name="os">
+		<option value="none" selected>Select…</option>
+		<option value="linux">Linux</option>
+		<option value="macos">macOS</option>
+		<option value="windows">Windows</option>
+	</select>
+	<label for="fruit">Fruit</label>
+	<select id="fruit" name="fruit">
+		<option value="none" selected>Select…</option>
+		<option value="apple">Apple</option>
+		<option value="banana">Banana</option>
+		<option value="cherry">Cherry</option>
+		<option value="durian">Durian</option>
+	</select>
+</form>
+<style>
+* {
+	border: 0;
+	box-sizing: border-box;
+	margin: 0;
+	padding: 0;
+}
+:root {
+	--foldDur: 0.7s;
+	font-size: calc(24px + (30 - 24)*(100vw - 320px)/(1280 - 320));
+}
+body, button {
+	color: #171717;
+	font: 1em Gaegu, cursive;
+	line-height: 1.5;
+}
+body {
+	background-image:
+		linear-gradient(#8ccfd100 1.35em,#8ccfd1 1.4em 1.45em,#8ccfd100 1.5em),
+		linear-gradient(90deg,#e5e5e5 1.35em,#8ccfd1 1.4em 1.45em,#e5e5e5 1.5em);
+	background-position: 50% 0;
+	background-size: 1.5em 1.5em;
+}
+form, .select__button, .select__options {
+	width: 100%;
+}
+form {
+	margin: auto;
+	padding: 3em 1.5em 6em 1.5em;
+	max-width: 13.25em;
+}
+label {
+	display: block;
+	font-weight: bold;
+}
+.select, .select__button {
+	position: relative;
+}
+.select {
+	margin-bottom: 1.5em;
+	perspective: 20em;
+}
+.select select {
+	display: none;
+}
+.select__button, .select__option {
+	background: #f1f1f1;
+	cursor: pointer;
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	padding: 0 0.375em;
+}
+.select__button {
+	animation-duration: var(--foldDur);
+	animation-timing-function: ease-in-out;
+	animation-direction: reverse;
+	border-radius: 0;
+	box-shadow:
+		-0.05em 0 0 #fff inset,
+		0.05em 0 0 #ccc inset,
+		0 -0.05em 0 #d9d9d9 inset;
+	transform-origin: 50% 100%;
+	-webkit-appearance: none;
+	appearance: none;
+	z-index: 1;
+}
+.select__button:focus, .select__option:focus {
+	outline: transparent;
+}
+.select__button:focus {
+	color: #2762f3;
+}
+.select__button:after, .select__option:first-child:after {
+	border-left: 0.25em solid transparent;
+	border-right: 0.25em solid transparent;
+	content: "";
+	display: block;
+	width: 0;
+	height: 0;
+}
+.select__button:after {
+	border-top: 0.25em solid;
+}
+.select__button--pristine {
+	animation: none;
+}
+.select__options {
+	position: absolute;
+	top: 0;
+	left: 0;
+	visibility: hidden;
+	transition: visibility 0s var(--foldDur) steps(1);
+}
+.select__option {
+	box-shadow:
+		-0.05em -0.1em 0.2em 0 #0001 inset,
+		0.05em 0 0 #ccc inset,
+		-0.05em 0.1em 0.2em 0 #fff inset,
+		-0.05em 0 0 #fff inset;
+	color: inherit;
+	opacity: 0;
+	text-decoration: none;
+	transition: opacity 0s var(--foldDur) steps(1);
+}
+.select__option:first-child {
+	box-shadow:
+		-0.05em -0.1em 0.2em 0 #0001 inset,
+		0.05em 0 0 #ccc inset,
+		-0.05em 0 0 #fff inset;
+}
+.select__option:first-child:after {
+	border-bottom: 0.25em solid;
+}
+.select__option:hover, .select__option:focus {
+	background: #b8ccf9;
+	box-shadow:
+		-0.05em -0.1em 0.2em 0 #0001 inset,
+		0.05em 0 0 #a9bbe5 inset,
+		-0.05em 0 0 #c1d4ff inset;
+}
+.select__option[aria-selected="true"]:not(:first-child):after {
+	content: "\2713";
+}
+
+/* Animation */
+.select__button[aria-expanded="true"] {
+	animation-direction: normal;
+	animation-fill-mode: forwards;
+	box-shadow:
+		-0.05em -0.1em 0.2em 0 #fff inset,
+		-0.05em 0 0 #fff inset;
+	cursor: default;
+	pointer-events: none;
+}
+.select__button--fold4 {
+	animation-name: fold4;
+}
+.select__button--fold5 {
+	animation-name: fold5;
+}
+.select__button[aria-expanded="true"] + .select__options,
+.select__button[aria-expanded="true"] + .select__options .select__option {
+	transition-delay: 0s;
+}
+.select__button--fold4[aria-expanded="true"] + .select__options,
+.select__button--fold5[aria-expanded="true"] + .select__options {
+	visibility: visible;
+}
+.select__button--fold4[aria-expanded="true"] + .select__options .select__option,
+.select__button--fold5[aria-expanded="true"] + .select__options .select__option {
+	opacity: 1;
+}
+
+.select__button--fold4 + .select__options .select__option:nth-child(4),
+.select__button--fold4[aria-expanded="true"] + .select__options .select__option:nth-child(2) {
+	transition-delay: calc(var(--foldDur) * 0.25);
+}
+.select__button--fold4 + .select__options .select__option:nth-child(3),
+.select__button--fold4[aria-expanded="true"] + .select__options .select__option:nth-child(3) {
+	transition-delay: calc(var(--foldDur) * 0.5);
+}
+.select__button--fold4 + .select__options .select__option:nth-child(2),
+.select__button--fold4[aria-expanded="true"] + .select__options .select__option:nth-child(4) {
+	transition-delay: calc(var(--foldDur) * 0.75);
+}
+
+.select__button--fold5 + .select__options .select__option:nth-child(5),
+.select__button--fold5[aria-expanded="true"] + .select__options .select__option:nth-child(2) {
+	transition-delay: calc(var(--foldDur) * 0.2);
+}
+.select__button--fold5 + .select__options .select__option:nth-child(4),
+.select__button--fold5[aria-expanded="true"] + .select__options .select__option:nth-child(3) {
+	transition-delay: calc(var(--foldDur) * 0.4);
+}
+.select__button--fold5 + .select__options .select__option:nth-child(3),
+.select__button--fold5[aria-expanded="true"] + .select__options .select__option:nth-child(4) {
+	transition-delay: calc(var(--foldDur) * 0.6);
+}
+.select__button--fold5 + .select__options .select__option:nth-child(2),
+.select__button--fold5[aria-expanded="true"] + .select__options .select__option:nth-child(5) {
+	transition-delay: calc(var(--foldDur) * 0.8);
+}
+
+@keyframes appear {
+	from { opacity: 0 }
+	to { opacity: 1 }
+}
+@keyframes fold4 {
+	from { color: #171717; transform: translateY(0) rotateX(0deg) }
+	12.5% { color: #171717; transform: translateY(0) rotateX(-90deg) }
+	12.51% { color: transparent; transform: translateY(0) rotateX(-90deg) }
+	25% { color: transparent; transform: translateY(0) rotateX(-180deg) }
+	25.01% { color: transparent; transform: translateY(100%) rotateX(0deg) }
+	50% { color: transparent; transform: translateY(100%) rotateX(-180deg) }
+	50.01% { color: transparent; transform: translateY(200%) rotateX(0deg) }
+	75% { color: transparent; transform: translateY(200%) rotateX(-180deg) }
+	75.01% { color: transparent; transform: translateY(300%) rotateX(0deg) }
+	to { color: transparent; transform: translateY(300%) rotateX(-100deg) }
+}
+@keyframes fold5 {
+	from { color: #171717; transform: translateY(0) rotateX(0deg) }
+	10% { color: #171717; transform: translateY(0) rotateX(-90deg) }
+	10.01% { color: transparent; transform: translateY(0) rotateX(-90deg) }
+	20% { color: transparent; transform: translateY(0) rotateX(-180deg) }
+	20.01% { color: transparent; transform: translateY(100%) rotateX(0deg) }
+	40% { color: transparent; transform: translateY(100%) rotateX(-180deg) }
+	40.01% { color: transparent; transform: translateY(200%) rotateX(0deg) }
+	60% { color: transparent; transform: translateY(200%) rotateX(-180deg) }
+	60.01% { color: transparent; transform: translateY(300%) rotateX(0deg) }
+	80% { color: transparent; transform: translateY(300%) rotateX(-180deg) }
+	80.01% { color: transparent; transform: translateY(400%) rotateX(0deg) }
+	to { color: transparent; transform: translateY(400%) rotateX(-100deg) }
+}
+</style>
+
+<script>
+document.addEventListener("DOMContentLoaded",() => {
+	const os = new SelectDropdown({ id: "os" }),
+		fruit = new SelectDropdown({ id: "fruit" });
+});
+
+class SelectDropdown {
+	constructor(args) {
+		this.isOpening = false;
+		this.select = document.querySelector(`select[id=${args.id}]`);
+		this.selectBtn = document.createElement("button");
+		this.options = document.createElement("div");
+		this.buildDropdown();
+	}
+	buildDropdown() {
+		if (this.select !== null) {
+			// create div to contain <select>
+			let wrapper = document.createElement("div");
+			wrapper.setAttribute("class","select");
+			this.select.parentElement.insertBefore(wrapper,this.select);
+			wrapper.appendChild(this.select);
+
+			// create button
+			let id = this.select.id,
+				selectBtnAttrs = {
+					"class": "select__button select__button--pristine",
+					"type": "button",
+					"id": `${id}-options`,
+					"aria-haspopup": "listbox",
+					"aria-expanded": "false"
+				};
+
+			for (let a in selectBtnAttrs)
+				this.selectBtn.setAttribute(a,selectBtnAttrs[a]);
+
+			let selectBtnText = document.createTextNode(this.select.options[0].innerHTML);
+			this.selectBtn.appendChild(selectBtnText);
+			wrapper.appendChild(this.selectBtn);
+
+			// create options div
+			let optionsAttrs = {
+				"class": "select__options",
+				"aria-labelledby": selectBtnAttrs.id
+			};
+			for (let a in optionsAttrs)
+				this.options.setAttribute(a,optionsAttrs[a]);
+
+			// then each option
+			for (let o of this.select.options) {
+				let option = document.createElement("a"),
+					optionText = document.createTextNode(o.innerHTML),
+					optionAttrs = {
+						"href": "#",
+						"class": "select__option",
+						"data-value": o.value,
+						"role": "option",
+						"aria-selected": "false"
+					};
+
+				for (let a in optionAttrs)
+					option.setAttribute(a,optionAttrs[a]);
+
+				option.appendChild(optionText);
+				this.options.appendChild(option);
+			}
+			wrapper.appendChild(this.options);
+
+			// sync with pre-selected option
+			let preselected = this.options.querySelector(`[data-value=${this.select.value}]`);
+			preselected.setAttribute("aria-selected",true);
+			this.selectBtn.innerHTML = preselected.innerHTML;
+
+			// restack so options can appear over other dropdowns
+			let selects = document.querySelectorAll(".select"),
+				selectCount = 0;
+			while (selectCount < selects.length) {
+				selects[selectCount].style.zIndex = selects.length - selectCount;
+				++selectCount;
+			}
+
+			// assign event listeners
+			document.querySelector(`label[for=${id}]`).addEventListener("click",() => {
+				if (!this.isExpanded())
+					this.selectBtn.focus();
+				else
+					this.closeSelect();
+			});
+			this.selectBtn.addEventListener("click",() => { this.openSelect(); });
+			this.options.addEventListener("click",e => { this.closeSelect(e); });
+
+			document.addEventListener("click",() => {
+				let el = document.activeElement;
+				if (el.parentElement.getAttribute("aria-labelledby") !== selectBtnAttrs.id)
+					this.closeSelect();
+			});
+			window.addEventListener("keydown",e => {
+				switch (e.keyCode) {
+					case 27: // Esc
+						this.closeSelect();
+						break;
+					case 32: // Spacebar
+						this.closeSelect(e);
+						break;
+					case 38: // Up
+						this.goToOption("previous");
+						break;
+					case 40: // Down
+						this.goToOption("next");
+						break;
+					default:
+						break;
+				}
+			});
+		}
+	}
+	isExpanded() {
+		return this.selectBtn.getAttribute("aria-expanded") === "true";
+	}
+	openSelect(e) {
+		if (!this.isExpanded()) {
+			// prevent immediate closing to not ruin animation
+			let foldDur = window.getComputedStyle(this.options);
+			foldDur = foldDur.getPropertyValue("transition-delay").split("");
+			if (foldDur.indexOf("m") > -1) {
+				foldDur.splice(foldDur.length - 2,2);
+				foldDur = parseInt(foldDur.join(""));
+
+			} else if (foldDur.indexOf("s") > -1) {
+				foldDur.pop();
+				foldDur = parseFloat(foldDur.join("")) * 1e3;
+			}
+			this.isOpening = true;
+			setTimeout(() => {this.isOpening = false;},foldDur);
+
+			// manage states
+			this.selectBtn.setAttribute("aria-expanded",true);
+
+			let btnClasses = this.selectBtn.classList,
+				pristineClass = "select__button--pristine",
+				animClass = `select__button--fold${this.select.options.length}`;
+
+			if (btnClasses.contains(pristineClass)) {
+				btnClasses.remove(pristineClass);
+			} else {
+				btnClasses.remove(animClass);
+				void this.selectBtn.offsetWidth;
+			}
+			btnClasses.add(animClass);
+
+			// set focus to selected option
+			let selected = this.options.querySelector("[aria-selected=true]");
+			if (selected !== null)
+				selected.focus();
+			else
+				this.options.childNodes[0].focus();
+		}
+	}
+	closeSelect(e) {
+		if (this.isExpanded() && !this.isOpening) {
+			if (e) {
+				// update values of both original and custom dropdowns
+				this.select.value = e.target.getAttribute("data-value");
+				this.selectBtn.innerHTML = e.target.innerHTML;
+
+				// indicate selected item
+				for (let n of this.options.childNodes)
+					n.setAttribute("aria-selected",false);
+
+				e.target.setAttribute("aria-selected",true);
+				e.preventDefault();
+			}
+			this.selectBtn.setAttribute("aria-expanded",false);
+			this.selectBtn.focus();
+
+			// fire animation
+			let btnClasses = this.selectBtn.classList,
+				animClass = `select__button--fold${this.select.options.length}`;
+
+			btnClasses.remove(animClass);
+			void this.selectBtn.offsetWidth;
+			btnClasses.add(animClass);
+		}
+	}
+	goToOption(goTo) {
+		if (this.isExpanded()) {
+			let optionLinks = this.options.querySelectorAll("a"),
+				activeEl = document.activeElement,
+				linkFound = false;
+
+			// check for focused option
+			for (let l of optionLinks) {
+				if (activeEl === l) {
+					linkFound = true;
+					break;
+				}
+			}
+			// allow movement with arrows until top or bottom option is reached
+			if (linkFound) {
+				if (goTo === "previous" && activeEl !== optionLinks[0])
+					activeEl.previousSibling.focus();
+
+				else if (goTo === "next" && activeEl !== optionLinks[optionLinks.length - 1])
+					activeEl.nextSibling.focus();
+			}
+		}
+	}
+}
+</script>
