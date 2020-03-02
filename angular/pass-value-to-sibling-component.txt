@@ -1,0 +1,95 @@
+Create a GlobalService first
+
+global.service.ts
+*****************
+import { Injectable } from '@angular/core';
+import { Subject, Observable} from 'rxjs';
+
+@Injectable({
+  providedIn: 'root'
+})
+export class GlobalService {
+  cart:Number = 0;
+  cartChange: Subject<Number> = new Subject<Number>();
+  constructor() { 
+    this.cartChange.subscribe((value)=>{
+      this.cart = value;
+    })
+  }
+
+  addCart = (n)=>{
+
+    this.cartChange.next(this.cart + n);
+    //this.cart += n;
+    
+  }
+}
+
+
+Adding rxjs with Observable and Subject. The Subject is used to pass and retrive a value when changed in the services.
+
+Sibling 1 cmponent
+******************
+import { Component, OnInit } from '@angular/core';
+import {GlobalService} from '../global.service';
+
+@Component({
+  selector: 'app-about',
+  templateUrl: './about.component.html',
+  styleUrls: ['./about.component.scss']
+})
+export class AboutComponent implements OnInit {
+
+  constructor(private service: GlobalService) { }
+
+  addCart =()=>{
+    this.service.addCart(1);
+  }
+
+  ngOnInit(): void {
+  }
+
+}
+
+sibling-1 component contain the addCart function are there. The addCart function is pass the value to the service.
+
+
+sibling 2 component
+*******************
+@Component({
+  selector: 'app-header',
+  templateUrl: './header.component.html',
+  styleUrls: ['./header.component.scss']
+})
+export class HeaderComponent implements OnInit {
+  cartItem: Number = 0;
+  constructor(private service: GlobalService) { 
+    this.cartItem = service.cart;
+  }
+  
+  get cart(): Number {
+    this.cartItem = this.service.cart;
+    return this.service.cart;
+  }
+
+  ngOnInit(): void {
+  }
+
+}
+
+Here add the constructor and get the value from the service
+
+the get cart() function is getter method is get the value from the service when the service variable is changed.
+
+sibling 2 html
+**************
+
+<header>
+    <img src="assets/images/fractal.png">
+    <nav>
+        Cart : {{cartItem}} -- {{cart}}
+    </nav>
+</header>
+
+
+
