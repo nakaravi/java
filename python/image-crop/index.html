@@ -1,0 +1,16 @@
+<script type="text/javascript" src="cropper.min.js"></script>
+<link rel="stylesheet" href="cropper.css"></div>
+
+<img src="more.png" id="image" />
+
+<script>
+
+document.getElementById('image').onload = function () {
+    new Cropper(this, {
+        update: function (coordinates) {
+			console.log(coordinates)
+		}
+    });
+}
+
+</script>
